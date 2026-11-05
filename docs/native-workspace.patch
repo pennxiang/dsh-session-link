@@ -1,0 +1,2610 @@
+diff --git a/packages/client/ui-workspace/README.md b/packages/client/ui-workspace/README.md
+index f630f0fd..f0e7b0eb 100644
+--- a/packages/client/ui-workspace/README.md
++++ b/packages/client/ui-workspace/README.md
+@@ -45,6 +45,14 @@ Choose **Add workspace** and select a directory to register it and open a Sessio
+ 
+ Hierarchy uses registered canonical paths only. It does not scan for projects or resolve symlink aliases. Nesting does not change Session working directories, logs, or Workspace membership. Deleting a parent Workspace leaves its child Workspaces registered and places them under their next registered ancestor, or at the root.
+ 
++### Display-only Session relationships
++
++A client plugin may add creator relationships to the **native** grouped Workspace list through `ctx.uiWorkspace.sessionRelationsVersion === 1` and `registerSessionRelations({ id, version: 1, source })`. Register inside `ctx.effect` and return the supplied disposer. `source` is a `HostObservable<SessionRelationsSnapshot>`: `getSnapshot()` returns a stable readonly `{ schemaVersion: 1, edges, loading, truncated }`; `subscribe(listener)` returns cleanup. Each edge is `{ workspaceId, sourceId, targetId, kind: 'created-session' }` with the corresponding branded ids. The public types are exported from this package's client entry. No provider means the original list; no additional requests are made by this package. Providers are subscribed only while the native browser observes the aggregate, and disposal removes their edges and subscriptions.
++
++Relationships change only `displayParentId` in the row projection: they never change Session headers, `parentSession`, runtime ownership, Workspace membership, or the saved native ordering. Both endpoints must currently be ordinary roots in the same uniquely owning Workspace; missing Sessions, forks, subagent-origin Sessions, duplicate children, cross-Workspace edges, and cycles are omitted. Earlier accepted edges win parent conflicts. Hidden or archived endpoints detach their visible children into native root rows, including in Show archived mode. Flat and search lists stay flat. Grouped rows retain native selection, leading status/extension seats, hover cards, menus, actions, rename, and drag handling.
++
++A related component is admitted in full whenever any of its rows meets the native Workspace watermark. Its visible root stays at depth zero; all descendants appear at one shared depth beneath it, preserving depth-first order and leaving the original edges intact. Only the root has a collapse button, always visible immediately after its title and before the native trailing status/actions. Its browser-persisted preference is keyed by Workspace and Session, defaults to expanded, and hides the whole component without counting descendants as watermark overflow. Older child collapse preferences are ignored while those rows are descendants. Ordinary navigation, including search-result navigation and late provider arrival, reveals only the target's visible root without rewriting child preferences. Unrelated rows keep native limits and order. Roots retain the ordinary Session title start without an empty relationship gutter. Descendants reserve an independent flex gutter despite row-padding or leading-seat styling; their connectors form one vertical run with a rounded short elbow only at the final row. Loading or truncated provider snapshots produce localized informational text without replacing the native list.
++
+ ### Search
+ 
+ Collapsed search is one header action beside the view and add actions: activating it expands the field across the header. A non-blank query replaces either browsing mode with one flat result list — case-insensitive title and Workspace substring matches appear immediately, while a 250 ms debounced Host request adds ranked current-conversation content matches and snippets. Each new query aborts the preceding request; a failed content search leaves metadata matches visible without an additional warning. The list is capped at 20. Choosing an unarchived result clears and collapses search, opens the Session, and scrolls its row into view in the configured browsing mode; grouped browsing also expands its Workspace and the full Session list when required. Archived results offer Unarchive; attempting to open one explains that restriction without clearing the query or navigating.
+@@ -55,7 +63,17 @@ The final built-in item in a Session row's "..." menu is Copy Session ID. It clo
+ 
+ The Session row's Rename action opens a dialog prefilled with the row's display title; confirming an unchanged title is deliberately allowed — it pins the current automatic title against regeneration. Double-clicking a title also opens Rename; for an unarchived Session, the preceding clicks open its conversation. Rename uses a temporary `workspaceOperation` reference and awaits its initial history opening. The row's Fork action reads ordinary cold history normally. When the Host reports that source migration is required, an app-wide Toast offers to open that Session; the action only navigates and does not retry fork. A successful fork uses the source's last completed turn and increments the inherited persisted title through Session Controller without retaining the child, opening its history, or changing selection. Workspace Delete opens a confirmation that states the retention boundary; success removes the group while its Sessions remain under Ungrouped. Pin, Rename, Fork, Archive, and Copy Session ID are themselves entries of the `sidebar.workspaces.session.menu.item` list (pin and archive also of `sidebar.workspaces.session.row.action`), so a client plugin's action takes whatever position its `order` gives it.
+ 
+-Archive commits without a confirmation dialog for a quiet Session and retains the Session's account position. A Session with running work is the one case that asks first: the Host refuses the plain archive and names that work, and the sidebar opens a stop-and-archive dialog listing it by family — the turn in progress, running subagents, background jobs, scheduled reminders, each with its labels — with the restore path stated; confirming asks the Host to stop the work the way the stop button does and archives once the archive set is durable, while the stops settle in the background, and cancelling leaves the Session running and visible. View options control visibility through one explicit three-way choice: Hide archived (the default) hides archived Sessions, All conversations (show archived) includes them, and Archived only hides ordinary Sessions and drops Workspaces without an archived Session; in tree grouping, children of a dropped Workspace nest under the nearest shown ancestor. Visible archived rows are grayed and carry an accessible explanation that they cannot be opened until restored; Rename, Fork, and Unarchive remain available. A successful archive shows a notice with an undo action and — while archived rows are hidden — a "filter archived sessions" action that switches the filter to All conversations (show archived); a stop-and-archive shows the same notice under its own wording, and undo restores the Session without resuming the stopped work. Unarchive removes the archive mark without restoring a pin or changing the saved position. An empty list shows a centered glyph-over-text placeholder; the Archived-only view names its own emptiness (No archived sessions yet) and adds a View other sessions text action that switches the filter back to Hide archived.
++Archive commits without a confirmation dialog for a quiet Session and retains the Session's account position. A Session with running work is the one case that asks first: the Host refuses the plain archive and names that work, and the sidebar opens a stop-and-archive dialog listing it by family — the turn in progress, running subagents, background jobs, scheduled reminders, each with its labels — with the restore path stated; confirming first makes the archive set durable and then requests the Host to stop the work, without claiming that every stop has completed, and cancelling leaves the Session running and visible. View options control visibility through one explicit three-way choice: Hide archived (the default) hides archived Sessions, All conversations (show archived) includes them, and Archived only hides ordinary Sessions and drops Workspaces without an archived Session; in tree grouping, children of a dropped Workspace nest under the nearest shown ancestor. Visible archived rows are grayed and carry an accessible explanation that they cannot be opened until restored; Rename, Fork, and Unarchive remain available. A successful archive shows a notice with an undo action and — while archived rows are hidden — a "filter archived sessions" action that switches the filter to All conversations (show archived); a stop-and-archive shows the same notice under its own wording, and undo restores the Session without resuming the stopped work. Unarchive removes the archive mark without restoring a pin or changing the saved position. An empty list shows a centered glyph-over-text placeholder; the Archived-only view names its own emptiness (No archived sessions yet) and adds a View other sessions text action that switches the filter back to Hide archived.
++
++### Server-planned group archiving
++
++The shared menu, hover action, and keyboard archive entry use `archiveSessionWithOutcome`; the existing public `archiveSession` remains a singleton operation. Providers require `ctx.uiWorkspace.sessionArchiveProvidersVersion === 2` and `registerSessionArchiveProvider({ id, version: 2, prepare, commit })`; legacy version 1 registrations are rejected. Register within `ctx.effect` and return the disposer. The public `SessionArchiveProvider`, `SessionArchiveScope`, `SessionArchiveScopeChoice`, `SessionArchivePlan`, `SessionArchiveActivity`, `SessionArchiveCommitOutcome`, and `SessionArchiveOutcome` are type-only exports. `prepare(sessionId)` returns `undefined` only when unhandled; otherwise it returns a scope question or authoritative plan. This package never derives archive scope from relationship display edges or visible rows. Planning errors surface without singleton fallback.
++
++A scope question is `{ kind: 'scope-choice', targetId, allowedScopes: ['single', 'related'] }`, with no plan id or members. The native dialog asks Only this session or All related sessions before preparing either range. Selecting calls `prepare(sessionId, { archiveScope })` afresh through the exact registered provider. `single` must be independently planned with only the target, never by filtering a related plan or consulting descendants; the provider owns that server boundary. Quiet single scope commits immediately after selection and retains single-Session undo, including for the currently viewed Session. Related scope always lists the actual complete members and asks for a second confirmation, even when quiet. Scope selection never implies stop consent.
++
++A plan names its required `archiveScope`, `planId`, `targetId`, complete `total`, `targets`, per-Session `activity`, and activity-only `requiresConfirmation`. Activity preserves nullable item ids/labels and total counts as a display DTO, not Host identities. The dialog shows exact member ids/titles and per-Session activity; active plans require a separate initially unchecked stop consent. Quiet related confirmation sends `stopActivity: false`. Cancel submits no commit. Questions and plans bind exact identity, contents, target, provider and navigation revision; changed, cancelled, consumed, unloaded or navigation-superseded requests fail closed, including late preparation. The provider receives `commit(plan, { archiveScope: plan.archiveScope, stopActivity })` once. Initial `stopActivity: true` bypasses neither scope choice nor member/stop confirmation. Server authorization, freshness, idempotency and execution remain provider-owned.
++
++Group outcomes report `succeeded`, `partial`, `unknown`, or `failed`, with confirmed `archivedIds`, `remaining`, `failed`, and `stopActivityRequested`. Confirmed archived descendants clear a matching current selection, including on partial outcomes; unrelated newer selection is preserved. Success and incomplete notices distinguish newly archived Sessions from pre-existing archive skips using the plan flags and confirmed result ids; they never offer a misleading single-root undo. Partial, uncertain and failed outcomes remain visible with counts; no automatic retry is performed. Stop-request wording does not promise that all activity stopped. The original singleton activity dialog, undo and archive filter behavior remain available when no provider handles the target.
+ 
+ Session update times use the tertiary label color, including on archived rows. A Session title wider than its row is clipped with an ellipsis at rest. Hovering the row scrolls the title to its far edge — the incremented title of a fork, for example — and reveals it without the ellipsis; leaving the row returns the title to its start.
+ 
+diff --git a/packages/client/ui-workspace/src/client/contract/slots.ts b/packages/client/ui-workspace/src/client/contract/slots.ts
+index d00b3658..47e86ea0 100644
+--- a/packages/client/ui-workspace/src/client/contract/slots.ts
++++ b/packages/client/ui-workspace/src/client/contract/slots.ts
+@@ -55,6 +55,7 @@ import type { WorkspaceShortcutState } from '../shortcuts.ts'
+ import type { StartSessionOptions } from '../navigation.ts'
+ import type {} from './toast.ts'
+ import type { createWorkspaceViewStore } from '../stores.ts'
++import type { SessionRelationsSnapshot } from './session-relations.ts'
+ 
+ /**
+  * Owner share of the directory-flow holes: the complete conversation between
+@@ -227,6 +228,7 @@ export type WorkspaceBrowserInjected = {
+      */
+     hostInfo: HostObservable<RemoteHostFacts>
+     workspaceShortcuts: HostObservable<WorkspaceShortcutState>
++    sessionRelations: HostObservable<SessionRelationsSnapshot>
+     shortcuts: HostObservable<readonly ShortcutCatalogEntry[]>
+   }
+   /** Open the browser search and focus its input. */
+@@ -293,6 +295,9 @@ export type SessionRowActionProps<Injected extends object = object> =
+ export type RowToast =
+   | { kind: 'archived'; sessionId: SessionId }
+   | { kind: 'stoppedAndArchived'; sessionId: SessionId }
++  | { kind: 'archiveGroupFinished'; count: number; alreadyArchived: number; stopActivityRequested: boolean }
++  | { kind: 'archiveGroupIncomplete'; state: 'partial' | 'unknown' | 'failed'; archived: number; alreadyArchived: number; remaining: number; failed: number }
++  | { kind: 'archiveFailed'; message: string }
+   | { kind: 'sessionIdCopied' }
+   | { kind: 'sessionIdCopyFailed' }
+   | { kind: 'pinFailed' }
+@@ -358,6 +363,12 @@ export interface ArchiveSessionInjected {
+  * refused the plain archive because this work still runs.
+  */
+ export interface SessionArchiveConfirmRequest {
++  /** Service-owned dialog identity; replacing a question resets local pending/error state. */
++  readonly requestId: number
++  /** Exact server plan when a provider handled this archive; absent for native singleton confirmation. */
++  plan?: import('./session-archive.ts').SessionArchivePlan
++  /** Scope selection precedes planning and carries no frozen member list. */
++  choice?: import('./session-archive.ts').SessionArchiveScopeChoice
+   /** Session to stop and archive. */
+   sessionId: SessionId
+   /** The row's display title, named in the dialog. */
+@@ -376,13 +387,15 @@ export interface SessionArchiveConfirmInjected {
+     archiveRequest: HostObservable<SessionArchiveConfirmRequest | null>
+   }
+   /** Consume or cancel the pending confirmation. */
+-  settleSessionArchive: () => void
++  settleSessionArchive: (request?: SessionArchiveConfirmRequest) => void
++  /** Choose a range on the exact pending question; this does not authorize stopping activity. */
++  chooseSessionArchiveScope: (sessionId: SessionId, choice: import('./session-archive.ts').SessionArchiveScopeChoice, scope: import('./session-archive.ts').SessionArchiveScope) => Promise<void>
+   /**
+    * Archive a Session after the Host stops its running work; resolves once
+    * the archive set is durable (the stops settle in the background) and
+    * raises the stopped-and-archived notice.
+    */
+-  stopAndArchiveSession: (sessionId: SessionId) => Promise<void>
++  stopAndArchiveSession: (sessionId: SessionId, planId?: string, stopActivity?: boolean) => Promise<void>
+ }
+ 
+ /** Fork action share. */
+diff --git a/packages/client/ui-workspace/src/client/index.ts b/packages/client/ui-workspace/src/client/index.ts
+index cc9da072..0f6c6184 100644
+--- a/packages/client/ui-workspace/src/client/index.ts
++++ b/packages/client/ui-workspace/src/client/index.ts
+@@ -58,7 +58,11 @@ import { SessionIdMenuItem } from './session-actions/SessionId.tsx'
+ import { WorkspacePicker } from './WorkspacePicker.tsx'
+ import { en, zh, type WorkspaceKey } from './locales.ts'
+ 
++import type { SessionArchiveOutcome } from './contract/session-archive.ts'
++
++export type { SessionArchiveActivity, SessionArchivePlan, SessionArchiveProvider, SessionArchiveCommitOutcome, SessionArchiveOutcome, SessionArchiveScope, SessionArchiveScopeChoice } from './contract/session-archive.ts'
+ export type { StartSessionOptions, UiWorkspace } from './navigation.ts'
++export type { SessionRelationEdge, SessionRelationsSnapshot, SessionRelationsRegistration } from './contract/session-relations.ts'
+ export type {
+   DirectoryFlowOwnerProps, DirectoryFlowSlotName, DirectoryPickingHooks, DirectoryPickingInjected,
+   MenuOpenState, RowToast, SessionRenameTarget, SessionRowOwnerProps, UseMenuOpenState, WorkspaceBrowserInjected,
+@@ -190,6 +194,36 @@ export function apply(ctx: Context): void {
+       uiWorkspace.unpinSession(sessionId).catch(() => { notify({ kind: 'unpinFailed' }) })
+     },
+   })
++  let archiveGeneration = 0
++  const settleArchive = (request?: SessionArchiveConfirmRequest): void => {
++    const pending = archiveRequest.getSnapshot()
++    if (request !== undefined && request !== pending) return
++    archiveGeneration++
++    if (pending?.plan !== undefined) uiWorkspace.cancelSessionArchive(pending.plan)
++    if (pending?.choice !== undefined) uiWorkspace.cancelSessionArchive(pending.choice)
++    archiveRequest.set(null)
++  }
++  ctx.effect(() => () => { settleArchive() })
++  const archiveNotice = (sessionId: SessionId, outcome: SessionArchiveOutcome, stopped: boolean): void => {
++    if (outcome.kind === 'single') {
++      notify({ kind: stopped ? 'stoppedAndArchived' : 'archived', sessionId })
++    } else if (outcome.kind === 'group') {
++      const result = outcome.result
++      if (outcome.plan.archiveScope === 'single' && result.archiveState === 'succeeded') {
++        notify({ kind: result.stopActivityRequested ? 'stoppedAndArchived' : 'archived', sessionId })
++        return
++      }
++      const previous = new Set(outcome.plan.targets.filter(target => target.alreadyArchived).map(target => target.id))
++      const newlyArchived = result.archivedIds.filter(id => !previous.has(id)).length
++      const alreadyArchived = result.archivedIds.filter(id => previous.has(id)).length
++      if (result.archiveState === 'succeeded') {
++        notify({ kind: 'archiveGroupFinished', count: newlyArchived, alreadyArchived, stopActivityRequested: result.stopActivityRequested })
++      } else {
++        notify({ kind: 'archiveGroupIncomplete', state: result.archiveState,
++          archived: newlyArchived, alreadyArchived, remaining: result.remaining.length, failed: result.failed.length })
++      }
++    }
++  }
+   const archiveInjected = (): ArchiveSessionInjected => ({
+     hooks: { archived: archivedSet },
+     // Archive preserves the log and the account position, so a quiet Session
+@@ -197,16 +231,28 @@ export function apply(ctx: Context): void {
+     // The Host's refusal for running work is the one case that asks first:
+     // the confirmation names that work and offers to stop it.
+     archiveSession: (sessionId) => {
+-      uiWorkspace.archiveSession(sessionId).then(() => {
+-        notify({ kind: 'archived', sessionId })
++      settleArchive()
++      const generation = archiveGeneration
++      uiWorkspace.archiveSessionWithOutcome(sessionId).then((outcome) => {
++        if (outcome.kind === 'confirmation' || outcome.kind === 'scope-choice') {
++          if (generation !== archiveGeneration) {
++            uiWorkspace.cancelSessionArchive(outcome.kind === 'confirmation' ? outcome.plan : outcome.choice)
++            return
++          }
++          const displayTitle = sessions.list.getSnapshot().byId[sessionId]?.displayTitle
++            ?? ctx.locale.bind('workspace')('archive.untitled')
++          archiveRequest.set({ requestId: generation, sessionId, displayTitle, activity: [],
++            ...(outcome.kind === 'confirmation' ? { plan: outcome.plan } : { choice: outcome.choice }) })
++        } else archiveNotice(sessionId, outcome, false)
+       }).catch((reason: unknown) => {
+         const activity = activeSessionRefusal(reason)
+         if (activity === undefined) {
+-          console.warn('session archive rejected:', reason)
++          notify({ kind: 'archiveFailed', message: reason instanceof Error ? reason.message : String(reason) })
+           return
+         }
++        if (generation !== archiveGeneration) return
+         const displayTitle = sessions.list.getSnapshot().byId[sessionId]?.displayTitle ?? sessionId
+-        archiveRequest.set({ sessionId, displayTitle, activity })
++        archiveRequest.set({ requestId: generation, sessionId, displayTitle, activity })
+       })
+     },
+     unarchiveSession,
+@@ -215,10 +261,33 @@ export function apply(ctx: Context): void {
+     (reason) => { notify({ kind: 'shortcutForkFailed', reason }) })
+   const archiveConfirmInjected = (): SessionArchiveConfirmInjected => ({
+     hooks: { archiveRequest },
+-    settleSessionArchive: () => { archiveRequest.set(null) },
+-    stopAndArchiveSession: async (sessionId) => {
+-      await uiWorkspace.archiveSession(sessionId, { stopActivity: true })
+-      notify({ kind: 'stoppedAndArchived', sessionId })
++    settleSessionArchive: settleArchive,
++    chooseSessionArchiveScope: async (sessionId, choice, archiveScope) => {
++      const pending = archiveRequest.getSnapshot()
++      if (pending === null || pending.sessionId !== sessionId || pending.choice !== choice) throw new Error(ctx.locale.bind('workspace')('archive.planUnavailable'))
++      const outcome = await uiWorkspace.archiveSessionWithOutcome(sessionId, { choice, archiveScope })
++      if (archiveRequest.getSnapshot() !== pending) {
++        if (outcome.kind === 'confirmation') uiWorkspace.cancelSessionArchive(outcome.plan)
++        return
++      }
++      if (outcome.kind === 'confirmation') archiveRequest.set({ requestId: pending.requestId, sessionId, displayTitle: pending.displayTitle, activity: [], plan: outcome.plan })
++      else {
++        archiveNotice(sessionId, outcome, false)
++        settleArchive(pending)
++      }
++    },
++    stopAndArchiveSession: async (sessionId, planId, stopActivity = false) => {
++      const pending = archiveRequest.getSnapshot()
++      if (pending === null || pending.choice !== undefined || pending.sessionId !== sessionId || pending.plan?.planId !== planId) throw new Error(ctx.locale.bind('workspace')('archive.planUnavailable'))
++      if (pending.plan === undefined) {
++        // A singleton confirmation never expands into a newly registered provider's group.
++        await uiWorkspace.archiveSession(sessionId, { stopActivity: true })
++        archiveNotice(sessionId, { kind: 'single' }, true)
++      } else {
++        const outcome = await uiWorkspace.archiveSessionWithOutcome(sessionId, { stopActivity, plan: pending.plan })
++        if (outcome.kind === 'confirmation') throw new Error(ctx.locale.bind('workspace')('archive.stopConsentRequired'))
++        archiveNotice(sessionId, outcome, stopActivity)
++      }
+     },
+   })
+   const forkInjected = (): ForkSessionInjected => ({
+@@ -281,7 +350,7 @@ export function apply(ctx: Context): void {
+     requestAddWorkspace: shortcutControls.add,
+     closeAddWorkspace: shortcutControls.closeAdd,
+     setDirectoryBusy: shortcutControls.directoryBusy,
+-    hooks: { directoryFlow: browserFlowSource, hostInfo, workspaceShortcuts: shortcutControls.state, shortcuts: ctx.shortcuts.catalog },
++    hooks: { directoryFlow: browserFlowSource, hostInfo, workspaceShortcuts: shortcutControls.state, shortcuts: ctx.shortcuts.catalog, sessionRelations: uiWorkspace.sessionRelations },
+   })
+   const pickerInjected = (): WorkspacePickerInjected => ({
+     createWorkspace: input => workspaces.create(input),
+diff --git a/packages/client/ui-workspace/src/client/locales.ts b/packages/client/ui-workspace/src/client/locales.ts
+index 0214ab99..6a88115e 100644
+--- a/packages/client/ui-workspace/src/client/locales.ts
++++ b/packages/client/ui-workspace/src/client/locales.ts
+@@ -33,6 +33,10 @@ export const zh = {
+   'viewOptions.onlyArchived': '仅显示已归档',
+   'sessions.expand': '展开其余 {n} 个会话',
+   'sessions.collapse': '收起',
++  'relations.expand': '展开“{name}”创建的会话',
++  'relations.collapse': '收起“{name}”创建的会话',
++  'relations.loading': '正在加载会话关系…',
++  'relations.truncated': '仅显示部分会话关系；其他会话仍在列表中。',
+   'empty.none': '暂无会话',
+   'empty.noneArchived': '暂无已归档会话',
+   'empty.viewOthers': '查看其他会话',
+@@ -70,10 +74,33 @@ export const zh = {
+   'row.pinned': '已置顶',
+   'toast.archivedNotOpenable': '已归档对话暂时无法查看，请取消归档后查看',
+   'toast.archived': '会话已归档，可',
+-  'toast.stoppedAndArchived': '已停止并归档，可',
+-  'archive.confirm.title': '停止并归档此会话？',
+-  'archive.confirm.desc': '“{title}”仍有正在进行的工作。归档会先停止这些工作；之后可在侧栏筛选“全部对话（显示已归档）”中恢复会话，被停止的工作不会自动继续。',
+-  'archive.confirm.activity': '将被停止的工作',
++  'toast.stoppedAndArchived': '已归档并请求停止相关工作，可',
++  'toast.archiveGroupFinished': '本次新归档 {n} 个会话，原已归档 {previous} 个。',
++  'toast.archiveGroupStopRequested': '本次新归档 {n} 个会话，原已归档 {previous} 个，并请求停止相关工作；不代表工作均已停止。',
++  'toast.archiveGroupIncomplete.partial': '归档部分完成：本次新归档 {archived} 个，原已归档 {previous} 个，剩余 {remaining} 个，失败或状态不明 {failed} 个。不会自动重试。',
++  'toast.archiveGroupIncomplete.unknown': '归档结果不确定：本次确认新归档 {archived} 个，原已归档 {previous} 个，剩余 {remaining} 个，失败或状态不明 {failed} 个。请先核实，不会自动重试。',
++  'toast.archiveGroupIncomplete.failed': '归档未完成：本次新归档 {archived} 个，原已归档 {previous} 个，剩余 {remaining} 个，失败或状态不明 {failed} 个。',
++  'toast.archiveFailed': '归档失败：{message}',
++  'archive.planUnavailable': '归档计划已失效、发生变化或提供器已卸载。未提交归档，请重新发起。',
++  'archive.untitled': '未命名',
++  'archive.scope.title': '选择归档范围',
++  'archive.scope.desc': '“{title}”存在关联会话。仅归档当前会话，还是查看全部关联会话的归档计划？选择范围不会授权停止工作。',
++  'archive.scope.single': '仅当前会话',
++  'archive.scope.related': '全部关联会话',
++  'archive.scope.pending': '正在准备所选范围的归档计划…',
++  'archive.members.title': '确认归档所列会话？',
++  'archive.members.action': '归档所列会话',
++  'archive.members.list': '将归档的会话',
++  'archive.members.alreadyArchived': '（原已归档）',
++  'archive.stopConsent': '我同意先归档，再请求停止下列活动；不保证全部停止。',
++  'archive.stopConsentRequired': '请单独确认是否请求停止活动。尚未提交归档。',
++  'archive.group.desc': '将归档“{title}”及下列确切成员，共 {n} 个。请核对列表后确认；停止活动需要另行同意。此操作不是原子的，也不提供整组撤销。',
++  'archive.group.activity': '{kind}：共 {n} 项；{names}',
++  'archive.group.more': '（另有 {n} 项未展示）',
++  'archive.group.moreGroups': '另有 {n} 类活动未展示',
++  'archive.confirm.title': '归档并请求停止相关工作？',
++  'archive.confirm.desc': '“{title}”仍有正在进行的工作。确认后先归档，再请求停止这些工作，不保证全部停止；之后可在侧栏筛选“全部对话（显示已归档）”中恢复会话，被停止的工作不会自动继续。',
++  'archive.confirm.activity': '请求停止的工作',
+   'archive.confirm.turn': '进行中的回合',
+   'archive.confirm.subagents.one': '{n} 个运行中的子智能体：{names}',
+   'archive.confirm.subagents.other': '{n} 个运行中的子智能体：{names}',
+@@ -84,8 +111,8 @@ export const zh = {
+   'archive.confirm.other.one': '{n} 项其他工作（{kind}）',
+   'archive.confirm.other.other': '{n} 项其他工作（{kind}）',
+   'archive.confirm.listSeparator': '、',
+-  'archive.confirm.action': '停止并归档',
+-  'archive.confirm.pending': '正在停止并归档…',
++  'archive.confirm.action': '归档并请求停止',
++  'archive.confirm.pending': '正在归档并请求停止…',
+   'toast.archivedUndo': '撤销',
+   'toast.archivedOr': '或',
+   'toast.archivedFilter': '筛选已归档会话',
+@@ -159,6 +186,10 @@ export const en = {
+   'viewOptions.onlyArchived': 'Archived only',
+   'sessions.expand': 'Show {n} more sessions',
+   'sessions.collapse': 'Show less',
++  'relations.expand': 'Expand sessions created by {name}',
++  'relations.collapse': 'Collapse sessions created by {name}',
++  'relations.loading': 'Loading session relationships…',
++  'relations.truncated': 'Only some relationships are shown; other sessions remain in the list.',
+   'empty.none': 'No sessions yet',
+   'empty.noneArchived': 'No archived sessions yet',
+   'empty.viewOthers': 'View other sessions',
+@@ -196,10 +227,33 @@ export const en = {
+   'row.pinned': 'Pinned',
+   'toast.archivedNotOpenable': 'Archived sessions cannot be opened. Unarchive it to view.',
+   'toast.archived': 'Session archived. You can ',
+-  'toast.stoppedAndArchived': 'Session stopped and archived. You can ',
+-  'archive.confirm.title': 'Stop and archive this session?',
+-  'archive.confirm.desc': '“{title}” still has work in progress. Archiving stops it first; you can restore the session later from the “All conversations (show archived)” filter in the sidebar, and the stopped work will not resume on its own.',
+-  'archive.confirm.activity': 'Work that will be stopped',
++  'toast.stoppedAndArchived': 'Session archived and stop requested. You can ',
++  'toast.archiveGroupFinished': 'Newly archived {n} sessions; {previous} were already archived.',
++  'toast.archiveGroupStopRequested': 'Newly archived {n} sessions; {previous} were already archived. Requested work to stop; this does not confirm all work stopped.',
++  'toast.archiveGroupIncomplete.partial': 'Archive partially completed: {archived} newly archived, {previous} previously archived, {remaining} remaining, {failed} failed or uncertain. No automatic retry.',
++  'toast.archiveGroupIncomplete.unknown': 'Archive outcome uncertain: {archived} confirmed newly archived, {previous} previously archived, {remaining} remaining, {failed} failed or uncertain. Verify before retrying; no automatic retry.',
++  'toast.archiveGroupIncomplete.failed': 'Archive incomplete: {archived} newly archived, {previous} previously archived, {remaining} remaining, {failed} failed or uncertain.',
++  'toast.archiveFailed': 'Archive failed: {message}',
++  'archive.planUnavailable': 'The archive plan expired, changed, or its provider was unloaded. Nothing was submitted; start again.',
++  'archive.untitled': 'Untitled',
++  'archive.scope.title': 'Choose archive scope',
++  'archive.scope.desc': '“{title}” has related sessions. Archive only this session, or review a plan for all related sessions? Choosing a scope does not authorize stopping work.',
++  'archive.scope.single': 'Only this session',
++  'archive.scope.related': 'All related sessions',
++  'archive.scope.pending': 'Preparing the selected archive scope…',
++  'archive.members.title': 'Archive the listed sessions?',
++  'archive.members.action': 'Archive listed sessions',
++  'archive.members.list': 'Sessions to archive',
++  'archive.members.alreadyArchived': ' (already archived)',
++  'archive.stopConsent': 'I agree to archive first, then request the activity below to stop; stopping all work is not guaranteed.',
++  'archive.stopConsentRequired': 'Confirm stopping activity separately. No archive was submitted.',
++  'archive.group.desc': 'Archive “{title}” and the exact members below ({n} total). Review the list before confirming; stopping activity requires separate consent. This is non-atomic and has no group undo.',
++  'archive.group.activity': '{kind}: {n} total; {names}',
++  'archive.group.more': ' ({n} more items not shown)',
++  'archive.group.moreGroups': '{n} more activity groups not shown',
++  'archive.confirm.title': 'Archive and request work to stop?',
++  'archive.confirm.desc': '“{title}” still has work in progress. Confirmation archives first, then requests work to stop; not all work is guaranteed to stop. You can restore the session later from the “All conversations (show archived)” filter in the sidebar; stopped work will not resume on its own.',
++  'archive.confirm.activity': 'Work requested to stop',
+   'archive.confirm.turn': 'The turn in progress',
+   'archive.confirm.subagents.one': '{n} running subagent: {names}',
+   'archive.confirm.subagents.other': '{n} running subagents: {names}',
+@@ -210,8 +264,8 @@ export const en = {
+   'archive.confirm.other.one': '{n} other item of work ({kind})',
+   'archive.confirm.other.other': '{n} other items of work ({kind})',
+   'archive.confirm.listSeparator': ', ',
+-  'archive.confirm.action': 'Stop and archive',
+-  'archive.confirm.pending': 'Stopping and archiving…',
++  'archive.confirm.action': 'Archive and request stop',
++  'archive.confirm.pending': 'Archiving and requesting stop…',
+   'toast.archivedUndo': 'undo',
+   'toast.archivedOr': ' or ',
+   'toast.archivedFilter': 'filter archived sessions',
+diff --git a/packages/client/ui-workspace/src/client/navigation.ts b/packages/client/ui-workspace/src/client/navigation.ts
+index 55e03054..0c276522 100644
+--- a/packages/client/ui-workspace/src/client/navigation.ts
++++ b/packages/client/ui-workspace/src/client/navigation.ts
+@@ -23,6 +23,9 @@ import type { DraftInitializationOptions } from '@deepseek-ai/dsh-client-ui-conv
+ import type { RowToast } from './contract/slots.ts'
+ import { pinOrderAccounts, pinOrderSource } from './pin-order.ts'
+ import type { WorkspaceViewStoreActions } from './stores.ts'
++import type { SessionRelationsRegistration } from './contract/session-relations.ts'
++import type { SessionArchiveOutcome, SessionArchivePlan, SessionArchiveProvider, SessionArchiveScope, SessionArchiveScopeChoice } from './contract/session-archive.ts'
++import { SessionRelationsRegistry, sessionRelationParents } from './session-relations.ts'
+ 
+ interface MainSelection {
+   readonly sessionId?: SessionId
+@@ -37,6 +40,25 @@ export interface StartSessionOptions extends DraftInitializationOptions {
+ 
+ /** Workspace archive and directory operations consumed by Client UI domains. */
+ export interface UiWorkspace {
++  /** Supported display-only Session relation registration version. */
++  readonly sessionRelationsVersion: 1
++  /**
++   * Register a provider without changing native Session ownership or Workspace membership.
++   * @param registration - unique provider id and stable observable source.
++   * @returns idempotent cleanup; the caller owns it through ctx.effect.
++   */
++  registerSessionRelations(registration: SessionRelationsRegistration): () => void
++  /** Independent control capability; relation sources never authorize archive operations. */
++  readonly sessionArchiveProvidersVersion: 2
++  /** Register a server-planned archive provider; the caller owns cleanup through ctx.effect. */
++  registerSessionArchiveProvider(provider: SessionArchiveProvider): () => void
++  /** Prepare or commit an exact archive plan, falling back to the native singleton operation when unhandled. */
++  archiveSessionWithOutcome(sessionId: SessionId, options?: {
++    readonly stopActivity?: boolean
++    readonly plan?: SessionArchivePlan
++    readonly choice?: SessionArchiveScopeChoice
++    readonly archiveScope?: SessionArchiveScope
++  }): Promise<SessionArchiveOutcome>
+   /**
+    * Select a Session and show its Conversation as one UI navigation action.
+    * @param target - known Session identity or durable direct-parent subagent address to display.
+@@ -151,6 +173,44 @@ export class DirectoryBrowseError extends Error {
+ 
+ /** Implements Workspace archive and directory UI operations. */
+ class UiWorkspaceService extends Service implements UiWorkspace {
++  readonly sessionRelationsVersion = 1
++  /** Browser-private observable; public providers register through the versioned method. */
++  readonly sessionRelations = new SessionRelationsRegistry(() => { this.revealSessionRelations() })
++  private relationRevealTarget: SessionId | undefined
++  readonly sessionArchiveProvidersVersion = 2
++  private archiveNavigationRevision = 0
++  private readonly archiveProviders = new Map<string, { readonly provider: SessionArchiveProvider }>()
++  private readonly archivePlans = new Map<SessionArchivePlan | SessionArchiveScopeChoice, {
++    readonly registration: { readonly provider: SessionArchiveProvider }
++    readonly fingerprint: string
++    readonly navigationRevision: number
++    state: 'ready' | 'preparing'
++  }>()
++
++  registerSessionArchiveProvider(provider: SessionArchiveProvider): () => void {
++    if (provider.version !== 2 || this.lifetime.signal.aborted || this.archiveProviders.has(provider.id)) {
++      throw new Error('Archive provider registration is unavailable or duplicated.')
++    }
++    const registration = { provider }
++    this.archiveProviders.set(provider.id, registration)
++    return () => {
++      if (this.archiveProviders.get(provider.id) !== registration) return
++      this.archiveProviders.delete(provider.id)
++      for (const [plan, binding] of this.archivePlans) {
++        if (binding.registration === registration) this.archivePlans.delete(plan)
++      }
++    }
++  }
++
++  /** Release an uncommitted confirmation; cancellation never calls a provider commit. */
++  cancelSessionArchive(plan: SessionArchivePlan | SessionArchiveScopeChoice): void {
++    this.archivePlans.delete(plan)
++  }
++
++  registerSessionRelations(registration: SessionRelationsRegistration): () => void {
++    return this.sessionRelations.register(registration)
++  }
++
+   /** The latest in-flight connection per Workspace; a request joins it only when both name the same preset. */
+   private readonly connecting = new Map<WorkspaceId, {
+     readonly agentPreset: string | undefined
+@@ -175,7 +235,7 @@ class UiWorkspaceService extends Service implements UiWorkspace {
+     private readonly directoryPicker: ClientRemote['directoryPicker'],
+     private readonly workspaces: IWorkspaces,
+     private readonly sessions: ISessions,
+-    private readonly view: Pick<WorkspaceViewStoreActions, 'pinSessionOrder'>,
++    private readonly view: Pick<WorkspaceViewStoreActions, 'pinSessionOrder' | 'setSessionRelationExpanded'>,
+     private readonly notify: (toast: RowToast) => void,
+   ) {
+     super(ctx, 'uiWorkspace')
+@@ -184,6 +244,10 @@ class UiWorkspaceService extends Service implements UiWorkspace {
+       return () => {
+         stop()
+         this.lifetime.abort()
++        this.relationRevealTarget = undefined
++        this.sessionRelations.dispose()
++        this.archiveProviders.clear()
++        this.archivePlans.clear()
+         const reference = this.mainReference
+         this.mainReference = undefined
+         reference?.release()
+@@ -365,6 +429,83 @@ class UiWorkspaceService extends Service implements UiWorkspace {
+     throw new Error(message)
+   }
+ 
++  async archiveSessionWithOutcome(sessionId: SessionId, options: {
++    readonly stopActivity?: boolean
++    readonly plan?: SessionArchivePlan
++    readonly choice?: SessionArchiveScopeChoice
++    readonly archiveScope?: SessionArchiveScope
++  } = {}): Promise<SessionArchiveOutcome> {
++    if (this.lifetime.signal.aborted) throw new Error(this.ctx.locale.bind('workspace')('archive.planUnavailable'))
++    if (options.plan !== undefined) return this.commitSessionArchive(sessionId, options.plan, options.stopActivity === true)
++    if (options.choice !== undefined) {
++      const choice = options.choice
++      const binding = this.archivePlans.get(choice)
++      if (binding === undefined || binding.state !== 'ready' || choice.targetId !== sessionId
++        || binding.navigationRevision !== this.archiveNavigationRevision
++        || binding.fingerprint !== JSON.stringify(choice)
++        || this.archiveProviders.get(binding.registration.provider.id) !== binding.registration
++        || options.archiveScope === undefined || !choice.allowedScopes.includes(options.archiveScope)) {
++        throw new Error(this.ctx.locale.bind('workspace')('archive.planUnavailable'))
++      }
++      binding.state = 'preparing'
++      try {
++        const prepared = await binding.registration.provider.prepare(sessionId, { archiveScope: options.archiveScope })
++        if (this.archivePlans.get(choice) !== binding || prepared === undefined || 'kind' in prepared || prepared.archiveScope !== options.archiveScope) {
++          throw new Error(this.ctx.locale.bind('workspace')('archive.planUnavailable'))
++        }
++        return await this.acceptSessionArchive(sessionId, prepared, binding.registration, binding.navigationRevision)
++      } finally { this.archivePlans.delete(choice) }
++    }
++    const navigationRevision = this.archiveNavigationRevision
++    for (const registration of this.archiveProviders.values()) {
++      const prepared = await registration.provider.prepare(sessionId)
++      if (this.lifetime.signal.aborted || navigationRevision !== this.archiveNavigationRevision
++        || this.archiveProviders.get(registration.provider.id) !== registration) {
++        throw new Error(this.ctx.locale.bind('workspace')('archive.planUnavailable'))
++      }
++      if (prepared === undefined) continue
++      return this.acceptSessionArchive(sessionId, prepared, registration, navigationRevision)
++    }
++    if (options.stopActivity === undefined) await this.archiveSession(sessionId)
++    else await this.archiveSession(sessionId, { stopActivity: options.stopActivity })
++    return { kind: 'single' }
++  }
++
++  private acceptSessionArchive(
++    sessionId: SessionId,
++    prepared: SessionArchivePlan | SessionArchiveScopeChoice,
++    registration: { readonly provider: SessionArchiveProvider },
++    navigationRevision: number,
++  ): Promise<SessionArchiveOutcome> | SessionArchiveOutcome {
++    if (this.lifetime.signal.aborted || navigationRevision !== this.archiveNavigationRevision
++      || this.archiveProviders.get(registration.provider.id) !== registration || prepared.targetId !== sessionId) {
++      throw new Error(this.ctx.locale.bind('workspace')('archive.planUnavailable'))
++    }
++    this.archivePlans.set(prepared, { registration, fingerprint: JSON.stringify(prepared), navigationRevision, state: 'ready' })
++    if ('kind' in prepared) return { kind: 'scope-choice', choice: prepared }
++    // Related members need confirmation even when quiet. Scope choice never implies stop consent.
++    if (prepared.archiveScope === 'related' || prepared.requiresConfirmation) return { kind: 'confirmation', plan: prepared }
++    return this.commitSessionArchive(sessionId, prepared, false)
++  }
++
++  private async commitSessionArchive(sessionId: SessionId, plan: SessionArchivePlan, stopActivity: boolean): Promise<SessionArchiveOutcome> {
++    const binding = this.archivePlans.get(plan)
++    if (binding === undefined || this.lifetime.signal.aborted
++      || binding.navigationRevision !== this.archiveNavigationRevision
++      || this.archiveProviders.get(binding.registration.provider.id) !== binding.registration
++      || plan.targetId !== sessionId || JSON.stringify(plan) !== binding.fingerprint) {
++      this.archivePlans.delete(plan)
++      throw new Error(this.ctx.locale.bind('workspace')('archive.planUnavailable'))
++    }
++    if (plan.requiresConfirmation && !stopActivity) return { kind: 'confirmation', plan }
++    // A submitted plan is one-shot, including uncertain failures; retry requires a fresh user action.
++    this.archivePlans.delete(plan)
++    const result = await binding.registration.provider.commit(plan, { archiveScope: plan.archiveScope, stopActivity })
++    if (!this.lifetime.signal.aborted && this.mainReference !== undefined
++      && result.archivedIds.includes(this.mainReference.sessionId)) this.clearMain()
++    return { kind: 'group', plan, result }
++  }
++
+   async archiveSession(sessionId: SessionId, options: { readonly stopActivity?: boolean } = {}): Promise<void> {
+     await this.workspaces.archiveSession(sessionId, options)
+     if (this.mainReference?.sessionId === sessionId) this.clearMain()
+@@ -490,6 +631,8 @@ class UiWorkspaceService extends Service implements UiWorkspace {
+   }
+ 
+   private clearMain(): void {
++    this.archiveNavigationRevision++
++    this.relationRevealTarget = undefined
+     const previous = this.mainReference
+     this.mainReference = undefined
+     this.selection.set({})
+@@ -497,6 +640,33 @@ class UiWorkspaceService extends Service implements UiWorkspace {
+     this.ctx.layout.selectPanel(null)
+   }
+ 
++  private revealSessionRelations(): void {
++    const sessionId = this.relationRevealTarget
++    if (sessionId === undefined || this.lifetime.signal.aborted) return
++    if (this.mainReference?.sessionId !== sessionId) {
++      this.relationRevealTarget = undefined
++      return
++    }
++    const snapshot = this.sessionRelations.getSnapshot()
++    if (snapshot.loading) return
++    const workspaceSnapshot = this.workspaces.list.getSnapshot()
++    const workspaces = workspaceSnapshot.items
++    const workspace = workspaces.find(item => item.sessionIds.includes(sessionId))
++    if (workspace === undefined) return
++    const summaries = this.sessions.list.getSnapshot().byId
++    const parents = sessionRelationParents(summaries, workspaces, snapshot.edges)
++    if (!parents.has(sessionId)) return
++    // Consume once: subsequent refreshes must not undo the user's manual collapse.
++    this.relationRevealTarget = undefined
++    const archived = new Set(workspaceSnapshot.archivedSessionIds)
++    let root = sessionId
++    for (let parent = parents.get(root); parent !== undefined; parent = parents.get(parent)) {
++      if (archived.has(parent) || summaries[parent]?.blank) break
++      root = parent
++    }
++    if (root !== sessionId) this.view.setSessionRelationExpanded(workspace.workspaceId, root, true)
++  }
++
+   private replaceMain(
+     target: SessionTarget,
+     signal: AbortSignal,
+@@ -504,6 +674,7 @@ class UiWorkspaceService extends Service implements UiWorkspace {
+     beforeOpen?: (sessionId: SessionId) => void,
+   ): void {
+     signal.throwIfAborted()
++    this.archiveNavigationRevision++
+     const reference = this.sessions.retain(target, { source: 'mainView' })
+     try {
+       signal.throwIfAborted()
+@@ -525,8 +696,12 @@ class UiWorkspaceService extends Service implements UiWorkspace {
+     }
+     const previous = this.mainReference
+     this.mainReference = reference
++    this.relationRevealTarget = panel === 'reveal' ? reference.sessionId : undefined
+     previous?.release()
+-    if (panel === 'reveal') this.ctx.layout.selectPanel(null)
++    if (panel === 'reveal') {
++      this.revealSessionRelations()
++      this.ctx.layout.selectPanel(null)
++    }
+   }
+ 
+ }
+diff --git a/packages/client/ui-workspace/src/client/rows/Rows.module.css b/packages/client/ui-workspace/src/client/rows/Rows.module.css
+index 6d35a231..04e4c5dc 100644
+--- a/packages/client/ui-workspace/src/client/rows/Rows.module.css
++++ b/packages/client/ui-workspace/src/client/rows/Rows.module.css
+@@ -110,6 +110,78 @@
+ .sessionRow {
+   height: 32px;
+   gap: 0;
++  position: relative;
++}
++
++/* Structural space belongs to the hierarchy, independently of themed row padding
++ * or the visibility of the leading status seat. Leaves reserve the same lane. */
++.relationGutter {
++  position: relative;
++  align-self: stretch;
++  flex: 0 0 calc(var(--dsh-relation-indent, 0px) + 4px);
++}
++
++.relationRail {
++  position: absolute;
++  inset-block: -1px;
++  inset-inline-start: calc(8px + var(--dsh-relation-rail, 0px));
++  width: 8px;
++  border-inline-start: 0.5px solid var(--dsw-alias-border-l3);
++  pointer-events: none;
++}
++
++.relationEnd {
++  bottom: 50%;
++  border-bottom: 0.5px solid var(--dsw-alias-border-l3);
++  border-end-start-radius: var(--dsw-radius-sm);
++  corner-shape: round;
++}
++
++.relationTitleGroup {
++  display: flex;
++  align-items: center;
++  min-width: 0;
++  flex: 1;
++  padding-inline-end: 6px;
++}
++
++.sessionRow .relationTitleGroup .title {
++  flex: 0 1 auto;
++}
++
++.relationToggle {
++  flex: none;
++  display: inline-flex;
++  align-items: center;
++  justify-content: center;
++  width: 16px;
++  height: 24px;
++  padding: 0;
++  border: 0;
++  border-radius: var(--dsw-radius-sm);
++  background: transparent;
++  color: var(--dsw-alias-label-secondary);
++  cursor: pointer;
++}
++
++.relationCaret {
++  width: 12px;
++  height: 12px;
++  flex: none;
++  transition: transform 150ms var(--ds-ease-in-out);
++}
++
++.relationToggle[aria-expanded='true'] .relationCaret {
++  transform: rotate(90deg);
++}
++
++.relationToggle:hover {
++  background: var(--dsw-alias-interactive-bg-hover);
++}
++
++.relationToggle:focus-visible {
++  outline: var(--dsw-focus-ring-width) solid var(--dsw-focus-ring-color, var(--dsw-alias-state-business-primary));
++  outline-offset: 1px;
+ }
+ 
+ .sessionRow .title {
+diff --git a/packages/client/ui-workspace/src/client/rows/Rows.tsx b/packages/client/ui-workspace/src/client/rows/Rows.tsx
+index 216a6fc0..4e280c36 100644
+--- a/packages/client/ui-workspace/src/client/rows/Rows.tsx
++++ b/packages/client/ui-workspace/src/client/rows/Rows.tsx
+@@ -11,7 +11,7 @@
+  * session and workspace hover cards are suppressed while a menu is open.
+  */
+ import { useEffect, useMemo, useRef, useState } from 'react'
+-import type { RefObject } from 'react'
++import type { CSSProperties, RefObject } from 'react'
+ import clsx from 'clsx'
+ import type { PropsRenderSlots } from '@deepseek-ai/dsh-client-ui-slots'
+ import {
+@@ -25,6 +25,7 @@ import type { StateDotState } from '@deepseek-ai/dsh-client-ui-primitives'
+ import { abbreviateHomePath } from '@deepseek-ai/dsh-util-workspace-path'
+ import type { MenuOpenState, WorkspaceBrowserProps } from '../contract/slots.ts'
+ import type { GroupNode, SearchResultNode, SessionNode } from '../tree.ts'
++import type { RelatedSessionRow } from '../session-relations.ts'
+ import css from './Rows.module.css'
+ 
+ /** The standard locale seat, prop-passed from the browser root. */
+@@ -543,7 +544,7 @@ export function SearchResultItem({ result, currentId, onOpen, onUnarchive, t }:
+  * @returns the session row.
+  */
+ export function SessionNodeItem({
+-  node, currentId, now, onOpen, onRenameRequest, renderSlot, onReveal, drag, t,
++  node, currentId, now, onOpen, onRenameRequest, renderSlot, onReveal, drag, relation, onToggleRelation, t,
+ }: {
+   node: SessionNode
+   currentId: string | undefined
+@@ -555,6 +556,9 @@ export function SessionNodeItem({
+   onReveal?: (() => void) | undefined
+   /** Present on reorderable-list rows so every row can remain a drop target. */
+   drag?: RowDragProps | undefined
++  /** Display-only grouped-tree placement; absent preserves the flat native row. */
++  relation?: RelatedSessionRow | undefined
++  onToggleRelation?: (() => void) | undefined
+   t: RowTranslate
+ } & PropsRenderSlots<
+   | 'sidebar.workspaces.session.menu.item'
+@@ -583,11 +587,25 @@ export function SessionNodeItem({
+     rowRef.current?.scrollIntoView({ block: 'nearest' })
+     onReveal()
+   }, [onReveal])
++  const titleElement = <span
++    ref={titleRef}
++    className={css.title}
++    onDoubleClick={row.blank
++      ? undefined
++      : (e) => { e.stopPropagation(); onRenameRequest(node.id, row.title) }}
++  >
++    {title}
++  </span>
+   // Figma session cell: pad 8, status slot 16, then a 4px title gap.
+   const ownRow = (
+     <div
+       ref={rowRef}
+       data-row-key={`session:${node.id}`}
++      data-display-parent-id={relation?.displayParentId}
++      data-relation-depth={relation === undefined ? undefined : relation.branches.length}
++      aria-expanded={relation?.hasChildren ? relation.expanded : undefined}
++      aria-level={relation === undefined ? undefined : relation.branches.length + 1}
++      style={relation === undefined ? undefined : { '--dsh-relation-indent': `${(relation.branches.length + 1) * 12}px` } as CSSProperties}
+       className={clsx(
+         css.sessionRow, selected && css.selected, menuOpen && css.menuOpen,
+         row.archived && css.archived,
+@@ -624,6 +642,19 @@ export function SessionNodeItem({
+           drag.drop(rowHalf(e))
+         }}
+     >
++      {relation !== undefined && relation.branches.length > 0 && <span className={css.relationGutter}>
++        {relation.branches.map((branch, index) => {
++          const terminal = index === relation.branches.length - 1
++          if (!terminal && branch.last) return null
++          return <span
++            key={branch.id}
++            aria-hidden="true"
++            data-relation-connector={terminal && branch.last ? 'end' : 'vertical'}
++            className={clsx(css.relationRail, terminal && branch.last && css.relationEnd)}
++            style={{ '--dsh-relation-rail': `${index * 12}px` } as CSSProperties}
++          />
++        })}
++      </span>}
+       {/* Pending interaction and own or descendant activity outrank the
+           finished-but-unviewed reminder, which returns after activity stops
+           and is cleared by opening the session. Archived rows keep the slot
+@@ -634,15 +665,19 @@ export function SessionNodeItem({
+           ? <SessionStatusDots statuses={statuses} />
+           : renderSlot('sidebar.session.row.leading', { sessionId: node.id }))}
+       </span>
+-      <span
+-        ref={titleRef}
+-        className={css.title}
+-        onDoubleClick={row.blank
+-          ? undefined
+-          : (e) => { e.stopPropagation(); onRenameRequest(node.id, row.title) }}
+-      >
+-        {title}
+-      </span>
++      {relation?.hasChildren ? <span className={css.relationTitleGroup} data-relation-title-group="">
++        {titleElement}
++        <button
++          type="button"
++          className={css.relationToggle}
++          aria-label={t(relation.expanded ? 'relations.collapse' : 'relations.expand', { name: title })}
++          aria-expanded={relation.expanded}
++          onClick={(event) => { event.stopPropagation(); onToggleRelation?.() }}
++          onDoubleClick={event => { event.stopPropagation() }}
++        >
++          <IconTriangleRightFillRegular className={css.relationCaret} />
++        </button>
++      </span> : titleElement}
+       {/* A blank New Session row is a provisional placeholder: nothing has
+           happened in it yet, so a "now" timestamp and the row verbs
+           (rename/fork/archive) would all act on content that does not
+diff --git a/packages/client/ui-workspace/src/client/rows/WorkspaceBrowser.module.css b/packages/client/ui-workspace/src/client/rows/WorkspaceBrowser.module.css
+index ce49fcb4..54547ce1 100644
+--- a/packages/client/ui-workspace/src/client/rows/WorkspaceBrowser.module.css
++++ b/packages/client/ui-workspace/src/client/rows/WorkspaceBrowser.module.css
+@@ -10,6 +10,13 @@
+   padding-right: var(--dsh-session-list-edge-inset);
+ }
+ 
++.relationNotice {
++  padding: 4px 8px;
++  font-size: 12px;
++  line-height: 18px;
++  color: var(--dsw-alias-label-secondary);
++}
++
+ .root.rail {
+   padding-right: 0;
+ }
+diff --git a/packages/client/ui-workspace/src/client/rows/WorkspaceBrowser.tsx b/packages/client/ui-workspace/src/client/rows/WorkspaceBrowser.tsx
+index df871654..6073ba13 100644
+--- a/packages/client/ui-workspace/src/client/rows/WorkspaceBrowser.tsx
++++ b/packages/client/ui-workspace/src/client/rows/WorkspaceBrowser.tsx
+@@ -39,6 +39,8 @@ import {
+ import { ProjectRowItem, SearchResultItem, SessionNodeItem } from './Rows.tsx'
+ import { AnimatedRows } from './AnimatedRows.tsx'
+ import { FLAT_SESSION_ORDER_KEY, type SessionGroupBy } from '../stores.ts'
++import { relatedSessionRows, sessionRelationParents } from '../session-relations.ts'
++import type { SessionRelationsSnapshot } from '../contract/session-relations.ts'
+ import { WorkspacePickFlow } from '../WorkspacePicker.tsx'
+ import css from './WorkspaceBrowser.module.css'
+ 
+@@ -279,6 +281,11 @@ type SessionTreeProps = Pick<
+   groupExpansion: Readonly<Record<string, boolean>>
+   /** Persist one Workspace group's expansion. */
+   setGroupExpanded: (key: string, expanded: boolean) => void
++  /** Stable aggregated display-only relationships. */
++  sessionRelations: SessionRelationsSnapshot
++  /** Persisted Session branch expansion, separate from Workspace groups. */
++  sessionRelationExpansion: Readonly<Record<string, boolean>>
++  setSessionRelationExpanded: WorkspaceBrowserProps['actions']['setSessionRelationExpanded']
+   /** Save a drag order and select Manual. */
+   setSessionOrder: (accountKey: string, order: readonly string[]) => void
+   /** Registry-global pin and archive sets plus the archived-visibility choice. */
+@@ -322,6 +329,7 @@ function SessionTree({
+   renderSlot,
+   insertWorkspaceBefore,
+   nestWorkspaces, groupExpansion, setGroupExpanded,
++  sessionRelations, sessionRelationExpansion, setSessionRelationExpanded,
+   setSessionOrder, home, t,
+   revealSessionId, onSessionRevealed, shortcuts,
+ }: SessionTreeProps) {
+@@ -414,6 +422,14 @@ function SessionTree({
+     }
+     return false
+   }
++  const relationParents = useMemo(
++    () => sessionRelationParents(list.byId, workspaces, sessionRelations.edges),
++    [list.byId, workspaces, sessionRelations.edges],
++  )
++  const projectedRows = (group: GroupNode, watermark: number) => relatedSessionRows(
++    group.sessions, watermarkRows(group.sessions, watermark).rows,
++    relationParents, group.workspaceId, sessionRelationExpansion,
++  )
+   const now = Date.now()
+   const commitSessionDrag = (activeDrag: DragState, over: NonNullable<DragState['over']>): void => {
+     if (sessionDropCommitted.current) return
+@@ -426,7 +442,7 @@ function SessionTree({
+       ? ungroupedSessionIds
+       : workspaces.find(workspace => workspace.workspaceId === activeDrag.accountKey)?.sessionIds
+     if (accountSessionIds === undefined) return
+-    const renderedSessions = watermarkRows(group.sessions, sessionWatermarks[group.key] ?? SESSION_WATERMARK_BASE).rows
++    const renderedSessions = projectedRows(group, sessionWatermarks[group.key] ?? SESSION_WATERMARK_BASE).rows.map(row => row.node)
+     const nextOrder = sessionDragOrder(accountSessionIds, renderedSessions, activeDrag, over)
+     if (nextOrder !== undefined) setSessionOrder(activeDrag.accountKey, nextOrder)
+   }
+@@ -477,13 +493,13 @@ function SessionTree({
+     const children = childrenByParent.get(group.key) ?? []
+     const compatibleDrag = workspaceDrag !== null && parents.get(workspaceDrag.workspaceId) === parents.get(group.key)
+     const watermark = sessionWatermarks[group.key] ?? SESSION_WATERMARK_BASE
+-    const collapsed = watermarkRows(group.sessions, baselines.get(group.key) ?? SESSION_WATERMARK_BASE)
+-    const visible = watermarkRows(group.sessions, watermark)
++    const collapsed = projectedRows(group, baselines.get(group.key) ?? SESSION_WATERMARK_BASE)
++    const visible = projectedRows(group, watermark)
+     const sessionsExpanded = visible.hiddenCount === 0
+     rowKeys.push(`workspace:${group.key}`)
+     const childRows = group.expanded ? children.map(child => renderGroup(child, depth + 1)) : []
+     const sessions = visible.rows
+-    for (const node of sessions) rowKeys.push(`session:${node.id}`)
++    for (const row of sessions) rowKeys.push(`session:${row.node.id}`)
+     if (collapsed.hiddenCount > 0) rowKeys.push(`overflow:${group.key}`)
+     const workspaceMarker = workspaceId !== undefined && workspaceDrag?.over?.id === workspaceId
+       ? workspaceDrag.over.half
+@@ -589,7 +605,8 @@ function SessionTree({
+             {childRows}
+           </div>
+         )}
+-        {sessions.map((node) => {
++        {sessions.map((relation) => {
++          const node = relation.node
+         // Session drag never leaves its browser-local account, and pinned
+         // rows reorder only within their leading pinned block.
+           const sameGroupDrag = drag !== null && drag.accountKey === group.key
+@@ -633,6 +650,10 @@ function SessionTree({
+                 ? () => { onSessionRevealed(node.id) }
+                 : undefined}
+               drag={dragProps}
++              relation={relation.hasChildren || relation.branches.length > 0 ? relation : undefined}
++              onToggleRelation={workspaceId === undefined ? undefined : () => {
++                setSessionRelationExpanded(workspaceId, node.id, !relation.expanded)
++              }}
+               t={t}
+             />
+           )
+@@ -667,6 +688,8 @@ function SessionTree({
+   const groupRows = rootGroups.map(group => renderGroup(group, 0))
+   return (
+     <HoverCardGroup className={clsx(css.treeBody, css.wide)}>
++      {sessionRelations.loading && <div role="status" className={css.relationNotice}>{t('relations.loading')}</div>}
++      {sessionRelations.truncated && <div role="status" className={css.relationNotice}>{t('relations.truncated')}</div>}
+       {workspaceDropAtListStart && <span className={css.listTopDropIndicator} aria-hidden="true" />}
+       <AnimatedRows
+         className={clsx(css.list, workspaceDropAtListStart && css.listTopDropActive)}
+@@ -917,6 +940,7 @@ export function WorkspaceBrowser({
+   useHostInfo,
+   useShortcuts,
+   useWorkspaceShortcuts,
++  useSessionRelations,
+   requestSearch,
+   requestAddWorkspace,
+   closeAddWorkspace,
+@@ -929,6 +953,9 @@ export function WorkspaceBrowser({
+   const searchShortcut = shortcuts.find(row => row.id === 'session.search')
+   const addShortcut = shortcuts.find(row => row.id === 'workspace.add')
+   const shortcutState = useWorkspaceShortcuts(state => state)
++  const sessionRelations = useSessionRelations(state => state)
++  const storedRelationExpansion = useStore(state => state.sessionRelationExpansion)
++  const sessionRelationExpansion = useMemo(() => storedRelationExpansion ?? {}, [storedRelationExpansion])
+   // Ordering remains live while the rail or search replaces the list body.
+   const list = useSessions(state => state)
+   const storedWorkspaces = useWorkspaces(state => state.items)
+@@ -1452,6 +1479,9 @@ export function WorkspaceBrowser({
+                 animationResetKey={`${groupBy}/${orderBy}/${archivedFilter}`}
+                 groupExpansion={groupExpansion}
+                 setGroupExpanded={actions.setGroupExpanded}
++                sessionRelations={sessionRelations}
++                sessionRelationExpansion={sessionRelationExpansion}
++                setSessionRelationExpanded={actions.setSessionRelationExpanded}
+                 setSessionOrder={saveSessionOrder}
+                 rowState={rowState}
+                 onLeaveArchivedOnly={leaveArchivedOnly}
+diff --git a/packages/client/ui-workspace/src/client/session-actions/ArchiveSession.tsx b/packages/client/ui-workspace/src/client/session-actions/ArchiveSession.tsx
+index aaef1991..9f70989b 100644
+--- a/packages/client/ui-workspace/src/client/session-actions/ArchiveSession.tsx
++++ b/packages/client/ui-workspace/src/client/session-actions/ArchiveSession.tsx
+@@ -80,21 +80,53 @@ export function ArchiveSessionRowButton({
+  * @returns the open dialog, or null.
+  */
+ export function SessionArchiveConfirmDialog({
+-  useArchiveRequest, settleSessionArchive, stopAndArchiveSession, t,
++  useArchiveRequest, settleSessionArchive, stopAndArchiveSession, chooseSessionArchiveScope, t,
+ }: SessionArchiveConfirmProps) {
+   const request = useArchiveRequest(pending => pending)
+   if (request === null) return null
++  if (request.choice !== undefined) return <ArchiveScopeForm key={request.requestId} request={request} choose={chooseSessionArchiveScope} onSettle={() => { settleSessionArchive(request) }} t={t} />
+   return (
+     <ArchiveConfirmForm
+-      key={request.sessionId}
++      key={`${String(request.requestId)}:${request.plan?.planId ?? request.sessionId}`}
+       request={request}
+       stopAndArchiveSession={stopAndArchiveSession}
+-      onSettle={settleSessionArchive}
++      onSettle={() => { settleSessionArchive(request) }}
+       t={t}
+     />
+   )
+ }
+ 
++/** Choosing a range prepares a new server plan; it never grants stop consent. */
++function ArchiveScopeForm({ request, choose, onSettle, t }: {
++  request: SessionArchiveConfirmRequest
++  choose: SessionArchiveConfirmInjected['chooseSessionArchiveScope']
++  onSettle: () => void
++  t: SessionArchiveConfirmProps['t']
++}) {
++  const [pending, setPending] = useState(false)
++  const [error, setError] = useState<string | null>(null)
++  const select = (scope: 'single' | 'related') => {
++    if (request.choice === undefined) return
++    setPending(true)
++    setError(null)
++    void choose(request.sessionId, request.choice, scope).catch((reason: unknown) => {
++      setPending(false)
++      setError(reason instanceof Error ? reason.message : String(reason))
++    })
++  }
++  const close = () => { if (!pending) onSettle() }
++  return <Modal open onClose={close} closeLabel={t('close')} title={t('archive.scope.title')}
++    description={t('archive.scope.desc', { title: request.displayTitle })}
++    footer={<>
++      <Button variant="outline" disabled={pending} onClick={close}>{t('cancel')}</Button>
++      <Button variant="outline" disabled={pending} onClick={() => { select('single') }}>{t('archive.scope.single')}</Button>
++      <Button variant="outline" disabled={pending} onClick={() => { select('related') }}>{t('archive.scope.related')}</Button>
++    </>}>
++    {pending && <div role="status">{t('archive.scope.pending')}</div>}
++    {error !== null && <div className={browserCss.renameError} role="alert">{error}</div>}
++  </Modal>
++}
++
+ /** One request's dialog: in-flight and error state die with it. */
+ function ArchiveConfirmForm({ request, stopAndArchiveSession, onSettle, t }: {
+   request: SessionArchiveConfirmRequest
+@@ -103,7 +135,10 @@ function ArchiveConfirmForm({ request, stopAndArchiveSession, onSettle, t }: {
+   t: SessionArchiveConfirmProps['t']
+ }) {
+   const [archiving, setArchiving] = useState(false)
++  const [stopConsent, setStopConsent] = useState(false)
+   const [error, setError] = useState<string | null>(null)
++  const requiresStop = request.plan?.requiresConfirmation === true
++  const related = request.plan?.archiveScope === 'related'
+   const close = () => {
+     if (archiving) return
+     onSettle()
+@@ -111,7 +146,10 @@ function ArchiveConfirmForm({ request, stopAndArchiveSession, onSettle, t }: {
+   const confirm = () => {
+     setArchiving(true)
+     setError(null)
+-    stopAndArchiveSession(request.sessionId).then(() => {
++    const operation = request.plan === undefined
++      ? stopAndArchiveSession(request.sessionId)
++      : stopAndArchiveSession(request.sessionId, request.plan.planId, requiresStop && stopConsent)
++    operation.then(() => {
+       setArchiving(false)
+       onSettle()
+     }).catch((reason: unknown) => {
+@@ -124,27 +162,47 @@ function ArchiveConfirmForm({ request, stopAndArchiveSession, onSettle, t }: {
+       open
+       onClose={close}
+       closeLabel={t('close')}
+-      title={t('archive.confirm.title')}
+-      description={t('archive.confirm.desc', { title: request.displayTitle })}
++      title={t(related ? 'archive.members.title' : 'archive.confirm.title')}
++      description={related && request.plan !== undefined
++        ? t('archive.group.desc', { title: request.displayTitle, n: request.plan.total })
++        : t('archive.confirm.desc', { title: request.displayTitle })}
+       footer={(
+         <>
+           <Button variant="outline" disabled={archiving} onClick={close}>{t('cancel')}</Button>
+           <Button
+             variant="outline"
+             className={browserCss.deleteAction}
+-            disabled={archiving}
++            disabled={archiving || (requiresStop && !stopConsent)}
+             onClick={confirm}
+           >
+-            {t('archive.confirm.action')}
++            {t(request.plan !== undefined && !requiresStop ? 'archive.members.action' : 'archive.confirm.action')}
+           </Button>
+         </>
+       )}
+     >
+-      <ul className={browserCss.archiveActivity} aria-label={t('archive.confirm.activity')}>
++      {request.plan !== undefined && <ul className={browserCss.archiveActivity} aria-label={t('archive.members.list')}>
++        {request.plan.targets.map(target => <li key={target.id}>
++          <strong>{target.title ?? t('archive.untitled')}</strong>{' '}<code>{target.id}</code>
++          {target.alreadyArchived && t('archive.members.alreadyArchived')}
++        </li>)}
++      </ul>}
++      {requiresStop && <label><input type="checkbox" checked={stopConsent} disabled={archiving}
++        onChange={event => { setStopConsent(event.currentTarget.checked) }} />{t('archive.stopConsent')}</label>}
++      {request.plan === undefined ? <ul className={browserCss.archiveActivity} aria-label={t('archive.confirm.activity')}>
+         {request.activity.map((entry, index) => (
+           <li key={`${entry.kind}-${String(index)}`}>{activityLine(entry, t)}</li>
+         ))}
+-      </ul>
++      </ul> : <ul className={browserCss.archiveActivity} aria-label={t('archive.confirm.activity')}>
++        {request.plan.activity.map(session => <li key={session.sessionId}>
++          <strong>{session.title ?? t('archive.untitled')}</strong>
++          <ul>{session.groups.map((group, index) => <li key={`${group.kind}-${String(index)}`}>
++            {t('archive.group.activity', { kind: group.kind, n: group.totalItems,
++              names: group.items.map(item => item.label ?? item.id ?? t('archive.untitled')).join(t('archive.confirm.listSeparator')) })}
++            {group.totalItems > group.items.length && t('archive.group.more', { n: group.totalItems - group.items.length })}
++          </li>)}</ul>
++          {session.totalGroups > session.groups.length && t('archive.group.moreGroups', { n: session.totalGroups - session.groups.length })}
++        </li>)}
++      </ul>}
+       {archiving && <div className={browserCss.deleteStatus} role="status">{t('archive.confirm.pending')}</div>}
+       {error !== null && <div className={browserCss.renameError} role="alert">{error}</div>}
+     </Modal>
+diff --git a/packages/client/ui-workspace/src/client/stores.ts b/packages/client/ui-workspace/src/client/stores.ts
+index bf32225b..1b48df8b 100644
+--- a/packages/client/ui-workspace/src/client/stores.ts
++++ b/packages/client/ui-workspace/src/client/stores.ts
+@@ -8,6 +8,8 @@
+ import { defineStore, type EngineStoreHandle } from '@deepseek-ai/dsh-client-store'
+ import type { SessionListState } from '@deepseek-ai/dsh-api-session-controller/client'
+ import type { SessionId } from '@deepseek-ai/dsh-session/types'
++import type { WorkspaceId } from '@deepseek-ai/dsh-api-workspace-controller/client'
++import { sessionRelationExpansionKey } from './session-relations.ts'
+ import { reconcileManualOrder, type ArchivedFilter, type SessionRowState } from './tree.ts'
+ 
+ /** Browser-local order account for the hierarchy-free flat Session list. */
+@@ -24,6 +26,8 @@ type WorkspaceViewState = {
+   orderBy: SessionOrderBy
+   /** Explicit group expansion keyed by Workspace identity, including descendants in tree mode. */
+   groupExpansion: Record<string, boolean>
++  /** Display-only Session branches; absent in older v5 snapshots means expanded. */
++  sessionRelationExpansion?: Record<string, boolean>
+   /** Saved manual order per Workspace group plus the browser-local flat-list account. */
+   sessionOrderByAccount: Record<string, string[]>
+   /** Archived-row visibility; omitted in pre-filter v5 snapshots and read as 'default'. */
+@@ -48,6 +52,7 @@ type WorkspaceViewActions = {
+     initialOrders: Readonly<Record<string, readonly string[]>>,
+   ) => void
+   setGroupExpanded: (draft: WorkspaceViewState, key: string, expanded: boolean) => void
++  setSessionRelationExpanded: (draft: WorkspaceViewState, workspaceId: WorkspaceId, sessionId: SessionId, expanded: boolean) => void
+   retainAccountKeys: (draft: WorkspaceViewState, workspaceKeys: readonly string[]) => void
+   syncSessionOrders: (
+     draft: WorkspaceViewState,
+@@ -85,6 +90,7 @@ export function createWorkspaceViewStore(): EngineStoreHandle<WorkspaceViewState
+       groupBy: 'workspace',
+       orderBy: 'updated',
+       groupExpansion: {},
++      sessionRelationExpansion: {},
+       sessionOrderByAccount: {},
+       archivedFilter: 'default',
+     }),
+@@ -97,6 +103,10 @@ export function createWorkspaceViewStore(): EngineStoreHandle<WorkspaceViewState
+         d.orderBy = mode
+       },
+       setGroupExpanded: (d, key: string, expanded: boolean) => { d.groupExpansion[key] = expanded },
++      setSessionRelationExpanded: (d, workspaceId, sessionId, expanded) => {
++        d.sessionRelationExpansion ??= {}
++        d.sessionRelationExpansion[sessionRelationExpansionKey(workspaceId, sessionId)] = expanded
++      },
+       retainAccountKeys: (d, workspaceKeys: readonly string[]) => {
+         const retained = new Set(workspaceKeys)
+         d.groupExpansion = Object.fromEntries(
+diff --git a/packages/client/ui-workspace/src/client/toast/register.ts b/packages/client/ui-workspace/src/client/toast/register.ts
+index efadbf89..f6bc28cd 100644
+--- a/packages/client/ui-workspace/src/client/toast/register.ts
++++ b/packages/client/ui-workspace/src/client/toast/register.ts
+@@ -80,6 +80,30 @@ export function registerToasts(
+         }),
+       }),
+     }, ToastEntry<PropsRuntime<'workspace.toast', 'forkRequiresOpen'>>)
++    yield ctx.slots.register({
++      name: 'workspace.toast', key: 'archiveFailed', locale: 'workspace',
++      inject: (): ToastDisplayInjected<'archiveFailed'> => ({
++        display: (notice, t) => ({ text: t('toast.archiveFailed', { message: notice.message }), tone: 'warning', holdMs: 10000 }),
++      }),
++    }, ToastEntry<PropsRuntime<'workspace.toast', 'archiveFailed'>>)
++    yield ctx.slots.register({
++      name: 'workspace.toast', key: 'archiveGroupFinished', locale: 'workspace',
++      inject: (): ToastDisplayInjected<'archiveGroupFinished'> => ({
++        display: (notice, t) => ({
++          text: t(notice.stopActivityRequested ? 'toast.archiveGroupStopRequested' : 'toast.archiveGroupFinished', { n: notice.count, previous: notice.alreadyArchived }),
++          tone: 'success', holdMs: 6000,
++        }),
++      }),
++    }, ToastEntry<PropsRuntime<'workspace.toast', 'archiveGroupFinished'>>)
++    yield ctx.slots.register({
++      name: 'workspace.toast', key: 'archiveGroupIncomplete', locale: 'workspace',
++      inject: (): ToastDisplayInjected<'archiveGroupIncomplete'> => ({
++        display: (notice, t) => ({
++          text: t(`toast.archiveGroupIncomplete.${notice.state}`, { archived: notice.archived, previous: notice.alreadyArchived, remaining: notice.remaining, failed: notice.failed }),
++          tone: 'warning', holdMs: 10000,
++        }),
++      }),
++    }, ToastEntry<PropsRuntime<'workspace.toast', 'archiveGroupIncomplete'>>)
+     yield ctx.slots.register({
+       name: 'workspace.toast', key: 'archived', locale: 'workspace', store: viewStore,
+       inject: (): ArchiveToastInjected => ({
+diff --git a/packages/client/ui-workspace/tests/apply.client.spec.ts b/packages/client/ui-workspace/tests/apply.client.spec.ts
+index 0d3278cd..7c5e1986 100644
+--- a/packages/client/ui-workspace/tests/apply.client.spec.ts
++++ b/packages/client/ui-workspace/tests/apply.client.spec.ts
+@@ -31,6 +31,8 @@ import { WorkspacePicker } from '../src/client/WorkspacePicker.tsx'
+ import { FLAT_SESSION_ORDER_KEY } from '../src/client/stores.ts'
+ import { UNGROUPED_KEY } from '../src/client/tree.ts'
+ import { apply as hostApply } from '../src/index.ts'
++import { archivePlan, archiveResult, archiveChoice, singleArchivePlan, singleArchiveResult } from './archive-fixtures.client.ts'
++import type { SessionArchivePlan, SessionArchiveProvider } from '../src/client/contract/session-archive.ts'
+ 
+ const sid = (id: string) => id as SessionId
+ const summary = (id: string, updatedAt: number): SessionSummary => ({
+@@ -307,7 +309,8 @@ describe('ui-workspace apply', () => {
+     expect(rowToastEntry.store).toBeUndefined()
+     expect(b.slots.entries('workspace.toast').map(row => row.options.key)).toEqual([
+       'sessionIdCopied', 'sessionIdCopyFailed', 'pinFailed', 'unpinFailed', 'archivedNotOpenable',
+-      'defaultWorkspaceFailed', 'shortcutForkFailed', 'createFailed', 'forkRequiresOpen', 'archived', 'stoppedAndArchived',
++      'defaultWorkspaceFailed', 'shortcutForkFailed', 'createFailed', 'forkRequiresOpen',
++      'archiveFailed', 'archiveGroupFinished', 'archiveGroupIncomplete', 'archived', 'stoppedAndArchived',
+     ])
+     for (const registration of b.slots.entries('workspace.toast')) {
+       expect(registration.locale).toBe('workspace')
+@@ -483,7 +486,7 @@ describe('ui-workspace apply', () => {
+     expect(view.getSnapshot().sessionOrderByAccount).toEqual({})
+   })
+ 
+-  it('archives through the navigation service and raises the archived notice; Host rejections are console diagnostics', async () => {
++  it('archives through the navigation service and raises the archived notice; Host rejections raise visible failure notices', async () => {
+     const b = await bench()
+     declare(b.slots, 'sidebar.workspaces', 'shell.overlay')
+     await b.ctx.plugin({ inject: [...inject], apply }).await()
+@@ -511,14 +514,14 @@ describe('ui-workspace apply', () => {
+     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+     try {
+       archive.archiveSession(sid('two'))
+-      await vi.waitFor(() => { expect(warn).toHaveBeenCalledWith('session archive rejected:', archiveRejection) })
++      await vi.waitFor(() => { expect(toast.hooks.toast.getSnapshot()).toEqual({ kind: 'archiveFailed', message: archiveRejection.message, seq: 2 }) })
+       archive.unarchiveSession(sid('two'))
+       await vi.waitFor(() => { expect(warn).toHaveBeenCalledWith('session unarchive rejected:', unarchiveRejection) })
+     } finally {
+       warn.mockRestore()
+     }
+-    // A rejected archive raises no notice.
+-    expect(toast.hooks.toast.getSnapshot()).toEqual({ kind: 'archived', sessionId: 'one', seq: 1 })
++    // A rejected archive is visible rather than console-only.
++    expect(toast.hooks.toast.getSnapshot()).toEqual({ kind: 'archiveFailed', message: 'archive exploded', seq: 2 })
+   })
+ 
+   it('turns the Host\'s running-work refusal into the stop-and-archive confirmation, which archives with stopActivity', async () => {
+@@ -541,7 +544,7 @@ describe('ui-workspace apply', () => {
+     try {
+       archive.archiveSession(sid('busy'))
+       await vi.waitFor(() => {
+-        expect(confirm.hooks.archiveRequest.getSnapshot()).toEqual({ sessionId: 'busy', displayTitle: 'Busy session', activity })
++        expect(confirm.hooks.archiveRequest.getSnapshot()).toEqual({ requestId: 1, sessionId: 'busy', displayTitle: 'Busy session', activity })
+       })
+       // The refusal is a question, not a diagnostic, and nothing is archived yet.
+       expect(warn).not.toHaveBeenCalled()
+@@ -551,6 +554,11 @@ describe('ui-workspace apply', () => {
+       // Cancelling settles the request; confirming asks the Host to stop the work.
+       confirm.settleSessionArchive()
+       expect(confirm.hooks.archiveRequest.getSnapshot()).toBeNull()
++      await expect(confirm.stopAndArchiveSession(sid('busy'))).rejects.toThrow()
++      expect(archiveSession).toHaveBeenCalledOnce()
++      archiveSession.mockReset().mockRejectedValueOnce(refusal).mockResolvedValueOnce(undefined)
++      archive.archiveSession(sid('busy'))
++      await vi.waitFor(() => { expect(confirm.hooks.archiveRequest.getSnapshot()).not.toBeNull() })
+       await confirm.stopAndArchiveSession(sid('busy'))
+       expect(archiveSession).toHaveBeenLastCalledWith('busy', { stopActivity: true })
+       expect(toast.hooks.toast.getSnapshot()).toEqual({ kind: 'stoppedAndArchived', sessionId: 'busy', seq: 1 })
+@@ -559,6 +567,130 @@ describe('ui-workspace apply', () => {
+     }
+   })
+ 
++  it.each(['single', 'related'] as const)('routes scope choice through the shared UI and reports %s with the correct undo semantics', async scope => {
++    const b = await bench()
++    declare(b.slots, 'sidebar.workspaces', 'shell.overlay')
++    await b.ctx.plugin({ inject: [...inject], apply }).await()
++    const choice = archiveChoice()
++    const plan = scope === 'single' ? singleArchivePlan() : archivePlan(false)
++    const prepare = vi.fn<SessionArchiveProvider['prepare']>(async (_id, options) => options === undefined ? choice : plan)
++    const commit = vi.fn(async () => scope === 'single' ? singleArchiveResult() : { ...archiveResult(), stopActivityRequested: false })
++    b.ctx.uiWorkspace.registerSessionArchiveProvider({ id: 'scope', version: 2, prepare, commit })
++    const menu = faceOf(entry(b.slots, MENU_ITEM, 'archive')) as ArchiveSessionInjected
++    const confirm = faceOf(entry(b.slots, 'shell.overlay', 'workspace.session-archive')) as SessionArchiveConfirmInjected
++    const toast = faceOf(entry(b.slots, 'shell.overlay', 'workspace.row-toast')) as RowToastInjected
++    menu.archiveSession(sid('one'))
++    await vi.waitFor(() => { expect(confirm.hooks.archiveRequest.getSnapshot()?.choice).toBe(choice) })
++    confirm.settleSessionArchive()
++    await expect(confirm.chooseSessionArchiveScope(sid('one'), choice, scope)).rejects.toThrow()
++    expect(commit).not.toHaveBeenCalled()
++    expect(prepare).toHaveBeenCalledOnce()
++    menu.archiveSession(sid('one'))
++    await vi.waitFor(() => { expect(confirm.hooks.archiveRequest.getSnapshot()?.choice).toBe(choice) })
++    const oldQuestion = confirm.hooks.archiveRequest.getSnapshot()!
++    await confirm.chooseSessionArchiveScope(sid('one'), choice, scope)
++    if (scope === 'related') {
++      expect(commit).not.toHaveBeenCalled()
++      expect(confirm.hooks.archiveRequest.getSnapshot()?.plan).toBe(plan)
++      confirm.settleSessionArchive(oldQuestion)
++      expect(confirm.hooks.archiveRequest.getSnapshot()?.plan).toBe(plan)
++      await confirm.stopAndArchiveSession(sid('one'), plan.planId, false)
++    }
++    expect(commit).toHaveBeenCalledWith(plan, { archiveScope: scope, stopActivity: false })
++    expect(toast.hooks.toast.getSnapshot()).toEqual(scope === 'single'
++      ? { kind: 'archived', sessionId: sid('one'), seq: 1 }
++      : { kind: 'archiveGroupFinished', count: 2, alreadyArchived: 0, stopActivityRequested: false, seq: 1 })
++  })
++
++  it('shares exact group confirmation between menu and hover, cancels with zero commits, and never offers singleton undo', async () => {
++    const b = await bench()
++    declare(b.slots, 'sidebar.workspaces', 'shell.overlay')
++    await b.ctx.plugin({ inject: [...inject], apply }).await()
++    const plan = archivePlan()
++    const prepare = vi.fn(async () => plan)
++    const commit = vi.fn(async () => archiveResult())
++    b.ctx.uiWorkspace.registerSessionArchiveProvider({ id: 'cascade', version: 2, prepare, commit })
++    const menu = faceOf(entry(b.slots, MENU_ITEM, 'archive')) as ArchiveSessionInjected
++    const hover = faceOf(entry(b.slots, ROW_ACTION, 'archive')) as ArchiveSessionInjected
++    const confirm = faceOf(entry(b.slots, 'shell.overlay', 'workspace.session-archive')) as SessionArchiveConfirmInjected
++    const toast = faceOf(entry(b.slots, 'shell.overlay', 'workspace.row-toast')) as RowToastInjected
++    menu.archiveSession(sid('one'))
++    await vi.waitFor(() => { expect(confirm.hooks.archiveRequest.getSnapshot()?.plan).toBe(plan) })
++    confirm.settleSessionArchive()
++    await expect(confirm.stopAndArchiveSession(sid('one'), plan.planId)).rejects.toThrow()
++    expect(commit).not.toHaveBeenCalled()
++    hover.archiveSession(sid('one'))
++    await vi.waitFor(() => { expect(confirm.hooks.archiveRequest.getSnapshot()?.plan).toBe(plan) })
++    await expect(confirm.stopAndArchiveSession(sid('one'), 'different-plan')).rejects.toThrow()
++    expect(commit).not.toHaveBeenCalled()
++    await confirm.stopAndArchiveSession(sid('one'), plan.planId, true)
++    expect(commit).toHaveBeenCalledWith(plan, { archiveScope: 'related', stopActivity: true })
++    expect(prepare).toHaveBeenCalledTimes(2)
++    expect(toast.hooks.toast.getSnapshot()).toEqual({ kind: 'archiveGroupFinished', count: 2, alreadyArchived: 0, stopActivityRequested: true, seq: 1 })
++    const notice = b.slots.entries('workspace.toast').find(row => row.options.key === 'archiveGroupFinished')
++    expect(notice).toBeDefined()
++    expect(notice!.store).toBeUndefined()
++  })
++
++  it.each(['partial', 'unknown', 'failed'] as const)('shows the %s group outcome instead of successful single-root undo', async (state) => {
++    const b = await bench()
++    declare(b.slots, 'sidebar.workspaces', 'shell.overlay')
++    await b.ctx.plugin({ inject: [...inject], apply }).await()
++    b.ctx.uiWorkspace.registerSessionArchiveProvider({ id: 'cascade', version: 2,
++      prepare: async () => archivePlan(false), commit: async () => archiveResult(state) })
++    const archive = faceOf(entry(b.slots, ROW_ACTION, 'archive')) as ArchiveSessionInjected
++    const toast = faceOf(entry(b.slots, 'shell.overlay', 'workspace.row-toast')) as RowToastInjected
++    archive.archiveSession(sid('one'))
++    const confirm = faceOf(entry(b.slots, 'shell.overlay', 'workspace.session-archive')) as SessionArchiveConfirmInjected
++    await vi.waitFor(() => { expect(confirm.hooks.archiveRequest.getSnapshot()?.plan).toBeDefined() })
++    await confirm.stopAndArchiveSession(sid('one'), 'server-plan', false)
++    expect(toast.hooks.toast.getSnapshot()).toEqual({ kind: 'archiveGroupIncomplete', state, archived: 1, alreadyArchived: 0, remaining: 1, failed: 1, seq: 1 })
++  })
++
++  it.each(['succeeded', 'partial'] as const)('separates pre-existing archive skips from new archives for %s', async (state) => {
++    const b = await bench()
++    declare(b.slots, 'sidebar.workspaces', 'shell.overlay')
++    await b.ctx.plugin({ inject: [...inject], apply }).await()
++    const plan = archivePlan(false)
++    const prior = { ...plan, targets: plan.targets.map(target => ({ ...target, alreadyArchived: target.id === sid('child') })) }
++    b.ctx.uiWorkspace.registerSessionArchiveProvider({ id: 'cascade', version: 2,
++      prepare: async () => prior, commit: async () => archiveResult(state) })
++    const archive = faceOf(entry(b.slots, ROW_ACTION, 'archive')) as ArchiveSessionInjected
++    const toast = faceOf(entry(b.slots, 'shell.overlay', 'workspace.row-toast')) as RowToastInjected
++    archive.archiveSession(sid('one'))
++    const confirm = faceOf(entry(b.slots, 'shell.overlay', 'workspace.session-archive')) as SessionArchiveConfirmInjected
++    await vi.waitFor(() => { expect(confirm.hooks.archiveRequest.getSnapshot()?.plan).toBe(prior) })
++    await confirm.stopAndArchiveSession(sid('one'), prior.planId, false)
++    await vi.waitFor(() => {
++      expect(toast.hooks.toast.getSnapshot()).toEqual(state === 'succeeded'
++        ? { kind: 'archiveGroupFinished', count: 1, alreadyArchived: 1, stopActivityRequested: true, seq: 1 }
++        : { kind: 'archiveGroupIncomplete', state, archived: 0, alreadyArchived: 1, remaining: 1, failed: 1, seq: 1 })
++    })
++  })
++
++  it('does not replace a newer confirmation with an older preparation and exposes provider-unload rejection', async () => {
++    const b = await bench()
++    declare(b.slots, 'sidebar.workspaces', 'shell.overlay')
++    await b.ctx.plugin({ inject: [...inject], apply }).await()
++    const first = Promise.withResolvers<SessionArchivePlan>()
++    const plan = archivePlan()
++    const newer = { ...plan, planId: 'newer', targetId: sid('two') }
++    const commit = vi.fn(async () => archiveResult())
++    const dispose = b.ctx.uiWorkspace.registerSessionArchiveProvider({ id: 'cascade', version: 2,
++      prepare: id => id === sid('one') ? first.promise : Promise.resolve(newer), commit })
++    const archive = faceOf(entry(b.slots, ROW_ACTION, 'archive')) as ArchiveSessionInjected
++    const confirm = faceOf(entry(b.slots, 'shell.overlay', 'workspace.session-archive')) as SessionArchiveConfirmInjected
++    archive.archiveSession(sid('one'))
++    archive.archiveSession(sid('two'))
++    await vi.waitFor(() => { expect(confirm.hooks.archiveRequest.getSnapshot()?.plan).toBe(newer) })
++    first.resolve(plan)
++    await settled()
++    expect(confirm.hooks.archiveRequest.getSnapshot()?.plan).toBe(newer)
++    dispose()
++    await expect(confirm.stopAndArchiveSession(sid('two'), newer.planId)).rejects.toThrow()
++    expect(commit).not.toHaveBeenCalled()
++  })
++
+   it('the notice share takes the notice down, undoes an archive, and shows the archived rows', async () => {
+     const b = await bench()
+     declare(b.slots, 'sidebar.workspaces', 'shell.overlay')
+diff --git a/packages/client/ui-workspace/tests/browser-styles.client.spec.ts b/packages/client/ui-workspace/tests/browser-styles.client.spec.ts
+index e94b2152..a0efa4e0 100644
+--- a/packages/client/ui-workspace/tests/browser-styles.client.spec.ts
++++ b/packages/client/ui-workspace/tests/browser-styles.client.spec.ts
+@@ -38,6 +38,38 @@ describe('WorkspaceBrowser.module.css list', () => {
+   const listArea = declarations('.listArea')
+   const list = declarations('.list')
+ 
++  it('uses token-only thin relation rails with a horizontal elbow only on the terminal sibling', () => {
++    const rail = rowDeclarations('.relationRail')
++    const end = rowDeclarations('.relationEnd')
++    expect(rail?.get('border-inline-start')).toBe('0.5px solid var(--dsw-alias-border-l3)')
++    expect(rail?.has('border-bottom')).toBe(false)
++    expect(rail?.get('pointer-events')).toBe('none')
++    expect(rail?.get('inset-block')).toBe('-1px')
++    expect(end?.get('bottom')).toBe('50%')
++    expect(end?.get('border-bottom')).toBe('0.5px solid var(--dsw-alias-border-l3)')
++    expect(end?.get('border-end-start-radius')).toBe('var(--dsw-radius-sm)')
++    expect(end?.get('corner-shape')).toBe('round')
++  })
++
++  it('keeps hierarchy space and controls independent of row padding and legacy leading classes', () => {
++    const gutter = rowDeclarations('.relationGutter')
++    const toggle = rowDeclarations('.relationToggle')
++    expect(rowDeclarations('.sessionRow')?.get('padding-inline-start')).toBe('calc(8px + var(--dsh-workspace-indent, 0px))')
++    expect(gutter?.get('position')).toBe('relative')
++    expect(gutter?.get('align-self')).toBe('stretch')
++    expect(gutter?.get('flex')).toBe('0 0 calc(var(--dsh-relation-indent, 0px) + 4px)')
++    expect(rowDeclarations('.relationRail')?.get('inset-inline-start')).toBe('calc(8px + var(--dsh-relation-rail, 0px))')
++    expect(toggle?.has('position')).toBe(false)
++    expect(toggle?.has('inset-inline-start')).toBe(false)
++    expect(toggle?.get('display')).toBe('inline-flex')
++    expect(toggle?.get('flex')).toBe('none')
++    expect(rowDeclarations('.relationTitleGroup')?.get('display')).toBe('flex')
++    expect(rowDeclarations('.relationTitleGroup')?.get('flex')).toBe('1')
++    expect(rowDeclarations('.sessionRow .relationTitleGroup .title')?.get('flex')).toBe('0 1 auto')
++    expect(rowDeclarations('.relationCaret')?.get('width')).toBe('12px')
++    expect(rowDeclarations(".relationToggle[aria-expanded='true'] .relationCaret")?.get('transform')).toBe('rotate(90deg)')
++  })
++
+   it('is the scrolling region', () => {
+     expect(list).toBeDefined()
+     expect(list!.get('overflow-y')).toBe('auto')
+diff --git a/packages/client/ui-workspace/tests/session-actions.client.spec.tsx b/packages/client/ui-workspace/tests/session-actions.client.spec.tsx
+index 1b7533e4..7daacb52 100644
+--- a/packages/client/ui-workspace/tests/session-actions.client.spec.tsx
++++ b/packages/client/ui-workspace/tests/session-actions.client.spec.tsx
+@@ -36,6 +36,7 @@ import { RowActionToast } from '../src/client/session-actions/RowActionToast.tsx
+ import { SessionIdMenuItem } from '../src/client/session-actions/SessionId.tsx'
+ import { createWorkspaceViewStore } from '../src/client/stores.ts'
+ import { en, zh } from '../src/client/locales.ts'
++import { archivePlan, archiveChoice } from './archive-fixtures.client.ts'
+ import { ShortcutRegistry } from '../../shortcuts/src/client/registry.ts'
+ import type { ShortcutCommandId } from '@deepseek-ai/dsh-client-shortcuts/client'
+ 
+@@ -402,8 +403,10 @@ describe('SessionRenameDialog', () => {
+ 
+ describe('SessionArchiveConfirmDialog', () => {
+   /** The dialog over a test-owned request source; settling clears the request the way apply does. */
+-  function archiveDialog(stopAndArchiveSession: SessionArchiveConfirmInjected['stopAndArchiveSession'], translate = t) {
++  function archiveDialog(stopAndArchiveSession: SessionArchiveConfirmInjected['stopAndArchiveSession'], translate = t,
++    chooseSessionArchiveScope = vi.fn<SessionArchiveConfirmInjected['chooseSessionArchiveScope']>(async () => {})) {
+     const request = createSnapshotStore<SessionArchiveConfirmRequest | null>(null)
++    let requestId = 0
+     const settleSessionArchive = vi.fn(() => { request.set(null) })
+     render(
+       <SessionArchiveConfirmDialog
+@@ -412,14 +415,110 @@ describe('SessionArchiveConfirmDialog', () => {
+         useArchiveRequest={bindSnapshotSelector(request)}
+         settleSessionArchive={settleSessionArchive}
+         stopAndArchiveSession={stopAndArchiveSession}
++        chooseSessionArchiveScope={chooseSessionArchiveScope}
+       />,
+     )
+     const ask = (activity: SessionArchiveConfirmRequest['activity']): void => {
+-      act(() => { request.set({ sessionId: sid('one'), displayTitle: 'Busy session', activity }) })
++      act(() => { request.set({ requestId: ++requestId, sessionId: sid('one'), displayTitle: 'Busy session', activity }) })
+     }
+-    return { settleSessionArchive, ask }
++    const askGroup = (requiresConfirmation = true): void => {
++      act(() => { request.set({ requestId: ++requestId, sessionId: sid('one'), displayTitle: 'Parent title', activity: [], plan: archivePlan(requiresConfirmation) }) })
++    }
++    const askChoice = () => {
++      const choice = archiveChoice()
++      act(() => { request.set({ requestId: ++requestId, sessionId: sid('one'), displayTitle: 'Parent title', activity: [], choice }) })
++      return choice
++    }
++    return { settleSessionArchive, ask, askGroup, askChoice, chooseSessionArchiveScope }
+   }
+ 
++  it.each(['single', 'related'] as const)('shows a scope-only choice and selects %s without granting stop consent', scope => {
++    const commit = vi.fn(async () => {})
++    const { askChoice, chooseSessionArchiveScope } = archiveDialog(commit)
++    const choice = askChoice()
++    expect(screen.getByRole('dialog', { name: '选择归档范围' })).toBeDefined()
++    expect(screen.queryByRole('list', { name: '将归档的会话' })).toBeNull()
++    expect(screen.queryByRole('checkbox')).toBeNull()
++    expect(commit).not.toHaveBeenCalled()
++    fireEvent.click(screen.getByRole('button', { name: scope === 'single' ? '仅当前会话' : '全部关联会话' }))
++    expect(chooseSessionArchiveScope).toHaveBeenCalledWith(sid('one'), choice, scope)
++    expect(commit).not.toHaveBeenCalled()
++  })
++
++  it('resets scope pending and error state when a new request replaces an in-flight choice', async () => {
++    const first = Promise.withResolvers<void>()
++    const choose = vi.fn<SessionArchiveConfirmInjected['chooseSessionArchiveScope']>()
++      .mockImplementationOnce(() => first.promise).mockResolvedValue(undefined)
++    const { askChoice } = archiveDialog(vi.fn(async () => {}), t, choose)
++    const old = askChoice()
++    fireEvent.click(screen.getByRole('button', { name: '仅当前会话' }))
++    expect(screen.getByRole<HTMLButtonElement>('button', { name: '仅当前会话' }).disabled).toBe(true)
++    const next = askChoice()
++    expect(next).not.toBe(old)
++    expect(screen.getByRole<HTMLButtonElement>('button', { name: '仅当前会话' }).disabled).toBe(false)
++    await act(async () => { first.reject(new Error('old preparation superseded')); await Promise.resolve() })
++    expect(screen.queryByRole('alert')).toBeNull()
++    expect(screen.getByRole<HTMLButtonElement>('button', { name: '全部关联会话' }).disabled).toBe(false)
++    fireEvent.click(screen.getByRole('button', { name: '全部关联会话' }))
++    expect(choose).toHaveBeenLastCalledWith(sid('one'), next, 'related')
++  })
++
++  it('cancels a scope question without preparing either range or committing', () => {
++    const commit = vi.fn(async () => {})
++    const { askChoice, chooseSessionArchiveScope } = archiveDialog(commit)
++    askChoice()
++    fireEvent.click(screen.getByRole('button', { name: '取消' }))
++    expect(screen.queryByRole('dialog')).toBeNull()
++    expect(chooseSessionArchiveScope).not.toHaveBeenCalled()
++    expect(commit).not.toHaveBeenCalled()
++  })
++
++  it('lists every quiet related member and confirms with stop false', async () => {
++    const commit = vi.fn(async () => {})
++    const { askGroup } = archiveDialog(commit)
++    askGroup(false)
++    const list = screen.getByRole('list', { name: '将归档的会话' })
++    expect(Array.from(list.querySelectorAll('code'), code => code.textContent)).toEqual(['child', 'one'])
++    expect(list.textContent).toContain('Child title')
++    expect(list.textContent).toContain('Parent title')
++    expect(screen.queryByRole('checkbox')).toBeNull()
++    expect(commit).not.toHaveBeenCalled()
++    fireEvent.click(screen.getByRole('button', { name: '归档所列会话' }))
++    expect(commit).toHaveBeenCalledWith(sid('one'), 'server-plan', false)
++    await waitFor(() => { expect(screen.queryByRole('dialog')).toBeNull() })
++  })
++
++  it('shows per-session group activity, null labels and truncation, and confirms the exact plan id', async () => {
++    const stopAndArchiveSession = vi.fn<SessionArchiveConfirmInjected['stopAndArchiveSession']>(async () => {})
++    const { askGroup } = archiveDialog(stopAndArchiveSession)
++    askGroup()
++    const dialog = screen.getByRole('dialog', { name: '确认归档所列会话？' })
++    expect(dialog.textContent).toContain('Parent title')
++    expect(dialog.textContent).toContain('2')
++    expect(dialog.textContent).toContain('不是原子')
++    expect(dialog.textContent).toContain('撤销')
++    const activity = screen.getByRole('list', { name: '请求停止的工作' })
++    expect(activity.querySelector('strong')?.textContent).toBe('Child title')
++    expect(activity.textContent).toContain('未命名')
++    expect(activity.textContent).toContain('Build')
++    expect(activity.textContent).toContain('3')
++    expect(activity.textContent).toContain('1')
++    expect(screen.getByRole<HTMLButtonElement>('button', { name: '归档并请求停止' }).disabled).toBe(true)
++    fireEvent.click(screen.getByRole('checkbox'))
++    fireEvent.click(screen.getByRole('button', { name: '归档并请求停止' }))
++    expect(stopAndArchiveSession).toHaveBeenCalledWith(sid('one'), 'server-plan', true)
++    await waitFor(() => { expect(screen.queryByRole('dialog')).toBeNull() })
++  })
++
++  it('cancels a group confirmation without submitting an archive', () => {
++    const stopAndArchiveSession = vi.fn<SessionArchiveConfirmInjected['stopAndArchiveSession']>(async () => {})
++    const { askGroup, settleSessionArchive } = archiveDialog(stopAndArchiveSession)
++    askGroup()
++    fireEvent.click(screen.getByRole('button', { name: '取消' }))
++    expect(stopAndArchiveSession).not.toHaveBeenCalled()
++    expect(settleSessionArchive).toHaveBeenCalledOnce()
++  })
++
+   it('renders nothing until a confirmation is requested', () => {
+     archiveDialog(vi.fn(async () => {}))
+     expect(screen.queryByRole('dialog')).toBeNull()
+@@ -435,19 +534,19 @@ describe('SessionArchiveConfirmDialog', () => {
+       { kind: 'job', items: [{ id: 'bash-1', label: 'pnpm run build' }] },
+       { kind: 'schedule', items: [{ id: 'schedule-1', label: 'check the build' }] },
+     ])
+-    const dialog = screen.getByRole('dialog', { name: '停止并归档此会话？' })
++    const dialog = screen.getByRole('dialog', { name: '归档并请求停止相关工作？' })
+     expect(dialog.textContent).toContain('“Busy session”仍有正在进行的工作')
+-    const lines = [...screen.getByRole('list', { name: '将被停止的工作' }).querySelectorAll('li')].map(li => li.textContent)
++    const lines = [...screen.getByRole('list', { name: '请求停止的工作' }).querySelectorAll('li')].map(li => li.textContent)
+     expect(lines).toEqual([
+       '进行中的回合',
+       '2 个运行中的子智能体：reviewer、child-2',
+       '1 个后台任务：pnpm run build',
+       '1 条定时提醒：check the build',
+     ])
+-    fireEvent.click(screen.getByRole('button', { name: '停止并归档' }))
++    fireEvent.click(screen.getByRole('button', { name: '归档并请求停止' }))
+     expect(stopAndArchiveSession).toHaveBeenCalledWith(sid('one'))
+     // While the Host call is pending, closing is blocked and the status shows.
+-    expect(screen.getByRole('status').textContent).toBe('正在停止并归档…')
++    expect(screen.getByRole('status').textContent).toBe('正在归档并请求停止…')
+     fireEvent.click(screen.getByRole('button', { name: '取消' }))
+     expect(settleSessionArchive).not.toHaveBeenCalled()
+     await act(async () => { pending.resolve(undefined) })
+@@ -460,7 +559,7 @@ describe('SessionArchiveConfirmDialog', () => {
+       .mockRejectedValueOnce(new Error('stop exploded'))
+     const { settleSessionArchive, ask } = archiveDialog(stopAndArchiveSession)
+     ask([{ kind: 'turn' }])
+-    fireEvent.click(screen.getByRole('button', { name: '停止并归档' }))
++    fireEvent.click(screen.getByRole('button', { name: '归档并请求停止' }))
+     await waitFor(() => { expect(screen.getByRole('alert').textContent).toBe('stop exploded') })
+     expect(settleSessionArchive).not.toHaveBeenCalled()
+     fireEvent.click(screen.getByRole('button', { name: '取消' }))
+@@ -474,7 +573,7 @@ describe('SessionArchiveConfirmDialog', () => {
+       .mockReturnValueOnce(pending.promise)
+     const { settleSessionArchive, ask } = archiveDialog(stopAndArchiveSession)
+     ask([{ kind: 'turn' }])
+-    fireEvent.click(screen.getByRole('button', { name: '停止并归档' }))
++    fireEvent.click(screen.getByRole('button', { name: '归档并请求停止' }))
+     fireEvent.keyDown(document, { key: 'Escape' })
+     expect(settleSessionArchive).not.toHaveBeenCalled()
+     await act(async () => { pending.reject('plain failure') })
+@@ -486,7 +585,7 @@ describe('SessionArchiveConfirmDialog', () => {
+   it('describes a family merged by another provider with the generic line', () => {
+     const { ask } = archiveDialog(vi.fn(async () => {}))
+     ask([{ kind: 'probe', items: [{ id: 'probe-1' }] }])
+-    const lines = [...screen.getByRole('list', { name: '将被停止的工作' }).querySelectorAll('li')].map(li => li.textContent)
++    const lines = [...screen.getByRole('list', { name: '请求停止的工作' }).querySelectorAll('li')].map(li => li.textContent)
+     expect(lines).toEqual(['1 项其他工作（probe）'])
+   })
+ 
+@@ -498,7 +597,7 @@ describe('SessionArchiveConfirmDialog', () => {
+       { kind: 'schedule', items: [{ id: 'schedule-1', label: 'check the build' }, { id: 'schedule-2', label: 'stand-up' }] },
+       { kind: 'probe', items: [{ id: 'probe-1' }] },
+     ])
+-    const lines = [...screen.getByRole('list', { name: 'Work that will be stopped' }).querySelectorAll('li')].map(li => li.textContent)
++    const lines = [...screen.getByRole('list', { name: 'Work requested to stop' }).querySelectorAll('li')].map(li => li.textContent)
+     expect(lines).toEqual([
+       '1 running subagent: reviewer',
+       '2 background jobs: bash-1, bash-2',
+@@ -684,10 +783,28 @@ describe('RowActionToast', () => {
+     }
+   })
+ 
++  it.each([t, tEn])('renders group success, partial, unknown and failed notices without singleton undo', async (translate) => {
++    const { notify, undoArchive } = await toastSurface(undefined, translate)
++    notify({ kind: 'archiveGroupFinished', count: 2, alreadyArchived: 1, stopActivityRequested: true })
++    let alert = screen.getByRole('alert')
++    expect(alert.textContent).toContain('2')
++    expect(alert.querySelector('button')).toBeNull()
++    expect(alert.textContent).toBe(translate('toast.archiveGroupStopRequested', { n: 2, previous: 1 }))
++    for (const state of ['partial', 'unknown', 'failed'] as const) {
++      notify({ kind: 'archiveGroupIncomplete', state, archived: 1, alreadyArchived: 4, remaining: 2, failed: 3 })
++      alert = screen.getByRole('alert')
++      expect(alert.textContent).toBe(translate(`toast.archiveGroupIncomplete.${state}`, { archived: 1, previous: 4, remaining: 2, failed: 3 }))
++      expect(alert.querySelector('button')).toBeNull()
++    }
++    notify({ kind: 'archiveFailed', message: 'ARCHIVE_PLAN_CHANGED' })
++    expect(screen.getByRole('alert').textContent).toContain('ARCHIVE_PLAN_CHANGED')
++    expect(undoArchive).not.toHaveBeenCalled()
++  })
++
+   it('the stopped-and-archived notice offers the same undo and filter actions under its own wording', async () => {
+     const { dismissToast, undoArchive, showArchived, notify } = await toastSurface()
+     notify({ kind: 'stoppedAndArchived', sessionId: sid('one') })
+-    expect(screen.getByRole('alert').textContent).toBe('已停止并归档，可撤销或筛选已归档会话')
++    expect(screen.getByRole('alert').textContent).toBe('已归档并请求停止相关工作，可撤销或筛选已归档会话')
+     fireEvent.click(screen.getByRole('button', { name: '撤销' }))
+     expect(undoArchive).toHaveBeenCalledWith(sid('one'))
+     expect(callOrder(dismissToast)).toBeLessThan(callOrder(undoArchive))
+diff --git a/packages/client/ui-workspace/tests/workspace-browser.client.spec.tsx b/packages/client/ui-workspace/tests/workspace-browser.client.spec.tsx
+index 4b62826c..fa219416 100644
+--- a/packages/client/ui-workspace/tests/workspace-browser.client.spec.tsx
++++ b/packages/client/ui-workspace/tests/workspace-browser.client.spec.tsx
+@@ -17,7 +17,10 @@ import type { DirectoryFlowOwnerProps, WorkspaceBrowserProps } from '../src/clie
+ import { createWorkspaceShortcutControls } from '../src/client/shortcuts.ts'
+ import { createWorkspaceViewStore, FLAT_SESSION_ORDER_KEY } from '../src/client/stores.ts'
+ import { UNGROUPED_KEY } from '../src/client/tree.ts'
++import type { SessionRelationsSnapshot } from '../src/client/contract/session-relations.ts'
++import { sessionRelationExpansionKey } from '../src/client/session-relations.ts'
+ import { WorkspaceBrowser } from '../src/client/rows/WorkspaceBrowser.tsx'
++import rowCss from '../src/client/rows/Rows.module.css'
+ import { zh } from '../src/client/locales.ts'
+ 
+ // Every fixture carries the resource hook the resources plugin merges into GlobalStandardProps.
+@@ -110,6 +113,7 @@ function mount(overrides: Partial<WorkspaceBrowserProps> = {}) {
+   const props: WorkspaceBrowserProps = {
+     useShortcuts: select => select([]),
+     useWorkspaceShortcuts: bindSnapshotSelector(controls.state),
++    useSessionRelations: hook({ schemaVersion: 1, edges: [], loading: false, truncated: false }),
+     requestSearch: controls.search,
+     requestAddWorkspace: controls.add,
+     closeAddWorkspace: controls.closeAdd,
+@@ -151,6 +155,155 @@ function rerender(b: ReturnType<typeof mount>, overrides: Partial<WorkspaceBrows
+   b.view.rerender(<WorkspaceBrowser {...b.props} />)
+ }
+ 
++describe('native display-only Session branches', () => {
++  const relations = (pairs: readonly (readonly [string, string])[], flags: Partial<SessionRelationsSnapshot> = {}): SessionRelationsSnapshot => ({
++    schemaVersion: 1, loading: false, truncated: false,
++    edges: pairs.map(([sourceId, targetId]) => ({ workspaceId: wid('w'), sourceId: sid(sourceId), targetId: sid(targetId), kind: 'created-session' })),
++    ...flags,
++  })
++  const rows = () => [...document.querySelectorAll<HTMLElement>('[data-row-key^="session:"]')]
++  const ids = () => rows().map(row => row.dataset.rowKey?.slice('session:'.length))
++  const row = (id: string) => document.querySelector<HTMLElement>(`[data-row-key="session:${id}"]`)!
++
++  it('preserves native rows/status/menus while all descendants share one root collapse and bypass the watermark', () => {
++    const sessionIds = ['a', 'u1', 'u2', 'u3', 'u4', 'b', 'c', 'd']
++    const renderSlotCalls = vi.fn<(name: string, owner: object) => void>()
++    const renderSlot: WorkspaceBrowserProps['renderSlot'] = (name: string, owner: object) => {
++      renderSlotCalls(name, owner)
++      return null
++    }
++    const b = mount({
++      useSessions: hook(sessionState(sessionIds.map((id, index) => summary(id, 100 - index)), { main: sid('a') })),
++      useWorkspaces: hook(workspaceState([workspace('w', sessionIds)])),
++      useSessionRelations: hook(relations([['a', 'b'], ['a', 'c'], ['b', 'd']])), renderSlot,
++    })
++    expect(ids()).toEqual(['a', 'b', 'd', 'c', 'u1', 'u2', 'u3', 'u4'])
++    expect(new Set(ids()).size).toBe(8)
++    expect(row('b').dataset.displayParentId).toBe('a')
++    expect(row('d').dataset.relationDepth).toBe('1')
++    expect(row('d').dataset.displayParentId).toBe('a')
++    expect([...row('d').querySelectorAll('[data-relation-connector]')].map(item => item.getAttribute('data-relation-connector'))).toEqual(['vertical'])
++    expect(row('b').querySelector('[data-relation-connector]')?.getAttribute('data-relation-connector')).toBe('vertical')
++    expect(row('c').querySelector('[data-relation-connector]')?.getAttribute('data-relation-connector')).toBe('end')
++    fireEvent.click(within(row('b')).getByRole('button', { name: '会话“b”的操作' }))
++    expect(b.props.open).not.toHaveBeenCalled()
++    expect(renderSlotCalls).toHaveBeenCalledWith('sidebar.workspaces.session.menu.item', { sessionId: sid('b'), displayTitle: 'b' })
++    expect(row('b').querySelector('button[aria-expanded]')).toBeNull()
++    act(() => { b.store.actions.setSessionRelationExpanded(wid('w'), sid('b'), false) })
++    expect(ids()).toContain('d')
++    expect(b.store.getSnapshot().sessionRelationExpansion?.[sessionRelationExpansionKey(wid('w'), sid('b'))]).toBe(false)
++    expect(b.props.open).not.toHaveBeenCalled()
++    fireEvent.click(row('c'))
++    expect(b.props.open).toHaveBeenCalledWith(sid('c'))
++    fireEvent.click(within(row('a')).getByRole('button', { name: '收起“a”创建的会话' }))
++    expect(ids()).toEqual(['a', 'u1', 'u2', 'u3', 'u4'])
++    b.view.unmount()
++    mount({ useSessions: b.props.useSessions, useWorkspaces: b.props.useWorkspaces, useSessionRelations: b.props.useSessionRelations })
++    expect(ids()).toEqual(['a', 'u1', 'u2', 'u3', 'u4'])
++    fireEvent.click(within(row('a')).getByRole('button', { name: '展开“a”创建的会话' }))
++    expect(ids()).toEqual(['a', 'b', 'd', 'c', 'u1', 'u2', 'u3', 'u4'])
++    expect(row('b').querySelector('button[aria-expanded]')).toBeNull()
++  })
++
++  it('keeps roots at the native title start and reserves child gutters under constrained padding and hidden legacy leading icons', () => {
++    const b = mount({
++      useSessions: hook(sessionState(['a', 'b', 'c', 'd', 'plain'].map(id => summary(id, 0)), { main: sid('a') })),
++      useWorkspaces: hook(workspaceState([workspace('w', ['a', 'b', 'c', 'd', 'plain'])])),
++      useSessionRelations: hook(relations([['a', 'b'], ['a', 'c'], ['b', 'd']])),
++    })
++    const { slot, arrow, relationGutter, relationCaret } = rowCss
++    if (slot === undefined || arrow === undefined || relationGutter === undefined || relationCaret === undefined) {
++      throw new Error('Row layout classes must be present in the CSS module')
++    }
++    const constraint = document.createElement('style')
++    constraint.textContent = `
++      [data-row-key^="session:"] { padding-inline-start: 6px; }
++      [data-row-key^="session:"] .${slot}, [data-row-key^="session:"] .${arrow} { display: none; }
++    `
++    document.head.append(constraint)
++    try {
++      for (const id of ['a', 'plain']) {
++        const nativeRow = row(id)
++        expect(nativeRow.querySelector(`.${relationGutter}`)).toBeNull()
++        expect(nativeRow.firstElementChild?.classList.contains(slot)).toBe(true)
++        expect(getComputedStyle(nativeRow).paddingInlineStart).toBe('6px')
++      }
++      expect(row('a').querySelector(`.${rowCss.title}`)?.textContent).toBe('a')
++      expect(row('plain').querySelector(`.${rowCss.title}`)?.textContent).toBe('plain')
++      for (const [id, indent] of [['b', '24px'], ['c', '24px'], ['d', '24px']] as const) {
++        const nativeRow = row(id)
++        const gutter = nativeRow.querySelector(`:scope > .${rowCss.relationGutter}`)!
++        const title = nativeRow.querySelector(`.${rowCss.title}`)!
++        expect(getComputedStyle(nativeRow).paddingInlineStart).toBe('6px')
++        expect(nativeRow.style.getPropertyValue('--dsh-relation-indent')).toBe(indent)
++        expect(gutter).not.toBeNull()
++        expect(gutter.contains(title)).toBe(false)
++        expect(gutter.nextElementSibling?.classList.contains(slot)).toBe(true)
++        for (const rail of nativeRow.querySelectorAll('[data-relation-connector]')) expect(rail.parentElement).toBe(gutter)
++      }
++      expect(row('plain').querySelector(`.${rowCss.relationGutter}`)).toBeNull()
++      const toggle = within(row('a')).getByRole('button', { name: '收起“a”创建的会话' })
++      const titleGroup = row('a').querySelector('[data-relation-title-group]')!
++      const caret = toggle.querySelector('svg')!
++      expect(toggle.parentElement).toBe(titleGroup)
++      expect(titleGroup.firstElementChild?.textContent).toBe('a')
++      expect(titleGroup.firstElementChild?.nextElementSibling).toBe(toggle)
++      expect(titleGroup.parentElement).toBe(row('a'))
++      expect(toggle.parentElement?.classList.contains(relationGutter)).toBe(false)
++      expect(row('a').querySelector(`.${relationGutter} button`)).toBeNull()
++      expect(titleGroup.compareDocumentPosition(within(row('a')).getByRole('button', { name: '会话“a”的操作' })) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
++      expect(caret.classList.contains(relationCaret)).toBe(true)
++      expect(caret.classList.contains(arrow)).toBe(false)
++      expect(getComputedStyle(caret).display).not.toBe('none')
++      expect(getComputedStyle(toggle).display).not.toBe('none')
++      for (const child of ['b', 'c', 'd']) expect(row(child).querySelector('button[aria-expanded]')).toBeNull()
++      fireEvent.click(toggle)
++      expect(row('d')).toBeNull()
++      expect(b.props.open).not.toHaveBeenCalled()
++      fireEvent.click(within(row('a')).getByRole('button', { name: '展开“a”创建的会话' }))
++      expect(row('d')).not.toBeNull()
++    } finally {
++      constraint.remove()
++    }
++  })
++
++  it('detaches archive/hidden parents, shows loading/truncation, and restores native roots when a provider unloads', () => {
++    const b = mount({
++      useSessions: hook(sessionState(['a', 'b', 'plain'].map(id => summary(id, 0)), { main: sid('b') })),
++      useWorkspaces: hook(workspaceState([workspace('w', ['a', 'b', 'plain'])])),
++      useSessionRelations: hook(relations([['a', 'b']], { loading: true, truncated: true })),
++    })
++    expect(screen.getByText('正在加载会话关系…')).toBeTruthy()
++    expect(screen.getByText('仅显示部分会话关系；其他会话仍在列表中。')).toBeTruthy()
++    expect(row('b').dataset.displayParentId).toBe('a')
++    rerender(b, { useWorkspaces: hook(workspaceState([workspace('w', ['a', 'b', 'plain'])], [sid('a')])) })
++    expect(row('b').dataset.displayParentId).toBeUndefined()
++    act(() => { b.store.actions.setArchivedFilter('show') })
++    expect(row('a')).toBeTruthy()
++    expect(row('b').dataset.displayParentId).toBeUndefined()
++    rerender(b, { useSessionRelations: hook(relations([])) })
++    expect(document.querySelector('[data-relation-depth]')).toBeNull()
++    expect(ids()).toHaveLength(3)
++    expect(screen.queryByText('正在加载会话关系…')).toBeNull()
++  })
++
++  it('keeps flat and search results unprojected', async () => {
++    const b = mount({
++      useSessions: hook(sessionState(['a', 'b'].map(id => summary(id, 0)), { main: sid('a') })),
++      useWorkspaces: hook(workspaceState([workspace('w', ['a', 'b'])])),
++      useSessionRelations: hook(relations([['a', 'b']])),
++      searchSessions: vi.fn(async () => ({ items: [{ sessionId: sid('b'), title: 'b', snippet: '', updatedAt: 0 }], hasMore: false })),
++    })
++    act(() => { b.store.actions.setGroupBy('flat') })
++    expect(ids()).toEqual(['a', 'b'])
++    expect(document.querySelector('[data-relation-depth]')).toBeNull()
++    act(() => { b.controls.search() })
++    fireEvent.change(screen.getByRole('textbox'), { target: { value: 'b' } })
++    await waitFor(() => { expect(b.props.searchSessions).toHaveBeenCalled() })
++    expect(document.querySelector('[data-relation-depth]')).toBeNull()
++  })
++})
++
+ describe('WorkspaceBrowser', () => {
+   it.each(['workspace', 'flat', 'ungrouped'] as const)('keeps %s recency independent of arrival order and saved manual positions', (mode) => {
+     localStorage.clear()
+diff --git a/packages/client/ui-workspace/tests/workspaces-service.client.spec.ts b/packages/client/ui-workspace/tests/workspaces-service.client.spec.ts
+index 90d3e8e0..fabb1f48 100644
+--- a/packages/client/ui-workspace/tests/workspaces-service.client.spec.ts
++++ b/packages/client/ui-workspace/tests/workspaces-service.client.spec.ts
+@@ -23,6 +23,10 @@ import { DirectoryBrowseError, UiWorkspaceService } from '../src/client/navigati
+ import { en, zh } from '../src/client/locales.ts'
+ import { createWorkspaceViewStore, FLAT_SESSION_ORDER_KEY } from '../src/client/stores.ts'
+ import { UNGROUPED_KEY } from '../src/client/tree.ts'
++import type { SessionRelationsSnapshot } from '../src/client/contract/session-relations.ts'
++import { sessionRelationExpansionKey } from '../src/client/session-relations.ts'
++import { archivePlan, archiveResult, archiveChoice, singleArchivePlan, singleArchiveResult } from './archive-fixtures.client.ts'
++import type { SessionArchivePlan, SessionArchiveProvider } from '../src/client/contract/session-archive.ts'
+ 
+ const sid = (id: string): SessionId => SessionId(id)
+ const wid = (id: string): WorkspaceId => id as WorkspaceId
+@@ -313,6 +317,266 @@ function bench(options: BenchOptions = {}) {
+   return { ctx, directoryPicker, sessions, uiWorkspace, workspaces, layout, selectPanel, view, notify, requestDraftInitialization }
+ }
+ 
++describe('server-planned archive providers', () => {
++  it('rejects legacy archive provider versions instead of admitting automatic cascade', () => {
++    const b = bench()
++    expect(() => {
++      // @ts-expect-error A stale runtime client may still attempt the old registration.
++      b.uiWorkspace.registerSessionArchiveProvider({ id: 'legacy', version: 1, prepare: async () => archivePlan(false), commit: async () => archiveResult() })
++    }).toThrow()
++  })
++
++  it('prepares only the selected single scope, archives self without descendants, and ignores implied stop', async () => {
++    const b = bench({ sessions: sessionState(['one', 'child'].map(id => summary(id))), workspaces: workspaceState() })
++    b.uiWorkspace.openSession(sid('one'))
++    const choice = archiveChoice()
++    const single = singleArchivePlan()
++    const prepare = vi.fn<SessionArchiveProvider['prepare']>(async (_id, options) => {
++      if (options === undefined) return choice
++      if (options.archiveScope !== 'single') throw new Error('descendant planning must not run')
++      return single
++    })
++    const commit = vi.fn(async () => singleArchiveResult())
++    b.uiWorkspace.registerSessionArchiveProvider({ id: 'scope', version: 2, prepare, commit })
++    expect(await b.uiWorkspace.archiveSessionWithOutcome(sid('one'), { stopActivity: true })).toEqual({ kind: 'scope-choice', choice })
++    expect(commit).not.toHaveBeenCalled()
++    expect(await b.uiWorkspace.archiveSessionWithOutcome(sid('one'), { choice, archiveScope: 'single', stopActivity: true })).toEqual({ kind: 'group', plan: single, result: singleArchiveResult() })
++    expect(prepare.mock.calls).toEqual([[sid('one')], [sid('one'), { archiveScope: 'single' }]])
++    expect(commit).toHaveBeenCalledWith(single, { archiveScope: 'single', stopActivity: false })
++    expect(single.targets.map(target => target.id)).toEqual([sid('one')])
++    expect(b.sessions.retained[0]!.release).toHaveBeenCalledOnce()
++    expect(b.workspaces.archiveCalls).toEqual([])
++  })
++
++  it('requires member confirmation for quiet related scope and stop consent separately for active scope', async () => {
++    for (const active of [false, true]) {
++      const b = bench()
++      const choice = archiveChoice()
++      const plan = archivePlan(active)
++      const commit = vi.fn(async () => archiveResult())
++      b.uiWorkspace.registerSessionArchiveProvider({ id: 'scope', version: 2,
++        prepare: async (_id, options) => options === undefined ? choice : plan, commit })
++      await b.uiWorkspace.archiveSessionWithOutcome(sid('one'))
++      expect(await b.uiWorkspace.archiveSessionWithOutcome(sid('one'), { choice, archiveScope: 'related', stopActivity: true })).toEqual({ kind: 'confirmation', plan })
++      expect(commit).not.toHaveBeenCalled()
++      if (active) {
++        expect(await b.uiWorkspace.archiveSessionWithOutcome(sid('one'), { plan })).toEqual({ kind: 'confirmation', plan })
++        expect(commit).not.toHaveBeenCalled()
++      }
++      await b.uiWorkspace.archiveSessionWithOutcome(sid('one'), { plan, stopActivity: active })
++      expect(commit).toHaveBeenCalledWith(plan, { archiveScope: 'related', stopActivity: active })
++    }
++  })
++
++  it.each(['cancel', 'unload', 'navigation', 'changed', 'copied'] as const)('rejects %s scope choices without preparing or committing', async mode => {
++    const b = bench({ sessions: sessionState(['one', 'other'].map(id => summary(id))), workspaces: workspaceState() })
++    const choice = archiveChoice()
++    const prepare = vi.fn(async () => choice)
++    const commit = vi.fn(async () => singleArchiveResult())
++    const dispose = b.uiWorkspace.registerSessionArchiveProvider({ id: 'scope', version: 2, prepare, commit })
++    await b.uiWorkspace.archiveSessionWithOutcome(sid('one'))
++    if (mode === 'cancel') b.uiWorkspace.cancelSessionArchive(choice)
++    if (mode === 'unload') dispose()
++    if (mode === 'navigation') b.uiWorkspace.openSession(sid('other'))
++    if (mode === 'changed') Object.assign(choice, { allowedScopes: ['related'] })
++    await expect(b.uiWorkspace.archiveSessionWithOutcome(sid('one'), { choice: mode === 'copied' ? { ...choice } : choice, archiveScope: 'single' })).rejects.toThrow()
++    expect(prepare).toHaveBeenCalledOnce()
++    expect(commit).not.toHaveBeenCalled()
++    expect(b.workspaces.archiveCalls).toEqual([])
++  })
++
++  it.each(['cancel', 'unload', 'navigation'] as const)('rejects a selected single preparation after %s and prevents duplicate submission', async mode => {
++    const b = bench({ sessions: sessionState(['one', 'other'].map(id => summary(id))), workspaces: workspaceState() })
++    const choice = archiveChoice()
++    const preparing = Promise.withResolvers<SessionArchivePlan>()
++    const commit = vi.fn(async () => singleArchiveResult())
++    const prepare = vi.fn<SessionArchiveProvider['prepare']>(async (_id, options) => options === undefined ? choice : preparing.promise)
++    const dispose = b.uiWorkspace.registerSessionArchiveProvider({ id: 'scope', version: 2, prepare, commit })
++    await b.uiWorkspace.archiveSessionWithOutcome(sid('one'))
++    const operation = b.uiWorkspace.archiveSessionWithOutcome(sid('one'), { choice, archiveScope: 'single' })
++    const rejected = expect(operation).rejects.toThrow()
++    await expect(b.uiWorkspace.archiveSessionWithOutcome(sid('one'), { choice, archiveScope: 'single' })).rejects.toThrow()
++    if (mode === 'cancel') b.uiWorkspace.cancelSessionArchive(choice)
++    if (mode === 'unload') dispose()
++    if (mode === 'navigation') b.uiWorkspace.openSession(sid('other'))
++    preparing.resolve(singleArchivePlan())
++    await rejected
++    expect(prepare).toHaveBeenCalledTimes(2)
++    expect(commit).not.toHaveBeenCalled()
++  })
++
++  it('falls back only for an unhandled plan and keeps singleton archive compatible', async () => {
++    const b = bench()
++    const commit = vi.fn(async () => archiveResult())
++    b.uiWorkspace.registerSessionArchiveProvider({ id: 'provider', version: 2, prepare: async () => undefined, commit })
++    expect(b.uiWorkspace.sessionArchiveProvidersVersion).toBe(2)
++    await expect(b.uiWorkspace.archiveSessionWithOutcome(sid('one'))).resolves.toEqual({ kind: 'single' })
++    expect(b.workspaces.archiveCalls).toEqual([sid('one')])
++    expect(commit).not.toHaveBeenCalled()
++  })
++
++  it('requires exact-plan consent, commits once, and does not use visible relation edges', async () => {
++    const b = bench()
++    const plan = archivePlan()
++    const prepare = vi.fn(async () => plan)
++    const commit = vi.fn(async () => archiveResult())
++    b.uiWorkspace.registerSessionArchiveProvider({ id: 'provider', version: 2, prepare, commit })
++    await expect(b.uiWorkspace.archiveSessionWithOutcome(sid('one'), { stopActivity: true })).resolves.toEqual({ kind: 'confirmation', plan })
++    expect(commit).not.toHaveBeenCalled()
++    await b.uiWorkspace.archiveSessionWithOutcome(sid('one'), { plan, stopActivity: true })
++    expect(prepare).toHaveBeenCalledOnce()
++    expect(commit).toHaveBeenCalledWith(plan, { archiveScope: 'related', stopActivity: true })
++    expect(b.workspaces.archiveCalls).toEqual([])
++    await expect(b.uiWorkspace.archiveSessionWithOutcome(sid('one'), { plan, stopActivity: true })).rejects.toThrow()
++    expect(commit).toHaveBeenCalledOnce()
++  })
++
++  it.each(['cancel', 'unload', 'changed', 'copied'] as const)('rejects a %s plan without side effects', async (mode) => {
++    const b = bench()
++    const plan = archivePlan()
++    const commit = vi.fn(async () => archiveResult())
++    const dispose = b.uiWorkspace.registerSessionArchiveProvider({ id: 'provider', version: 2, prepare: async () => plan, commit })
++    await b.uiWorkspace.archiveSessionWithOutcome(sid('one'))
++    if (mode === 'cancel') b.uiWorkspace.cancelSessionArchive(plan)
++    if (mode === 'unload') {
++      dispose(); dispose()
++      b.uiWorkspace.registerSessionArchiveProvider({ id: 'provider', version: 2, prepare: async () => plan, commit })
++    }
++    if (mode === 'changed') Object.assign(plan, { total: 3 })
++    await expect(b.uiWorkspace.archiveSessionWithOutcome(sid('one'), { plan: mode === 'copied' ? { ...plan } : plan, stopActivity: true })).rejects.toThrow()
++    expect(commit).not.toHaveBeenCalled()
++    expect(b.workspaces.archiveCalls).toEqual([])
++  })
++
++  it.each(['unload', 'dispose'] as const)('rejects a preparation that settles after %s', async (mode) => {
++    const b = bench()
++    const preparing = Promise.withResolvers<SessionArchivePlan | undefined>()
++    const commit = vi.fn(async () => archiveResult())
++    const dispose = b.uiWorkspace.registerSessionArchiveProvider({ id: 'provider', version: 2, prepare: () => preparing.promise, commit })
++    const result = b.uiWorkspace.archiveSessionWithOutcome(sid('one'))
++    const rejected = expect(result).rejects.toThrow()
++    if (mode === 'unload') dispose()
++    else await b.ctx.fiber.dispose()
++    preparing.resolve(archivePlan(false))
++    await rejected
++    expect(commit).not.toHaveBeenCalled()
++    expect(b.workspaces.archiveCalls).toEqual([])
++  })
++
++  it.each(['succeeded', 'partial', 'unknown', 'failed'] as const)('clears an archived descendant selection for %s, without clearing a later unrelated selection', async (state) => {
++    const b = bench({ sessions: sessionState(['one', 'child', 'other'].map(id => summary(id))), workspaces: workspaceState() })
++    const plan = archivePlan(false)
++    const commit = vi.fn(async () => archiveResult(state))
++    b.uiWorkspace.registerSessionArchiveProvider({ id: 'provider', version: 2, prepare: async () => plan, commit })
++    b.uiWorkspace.openSession(sid('child'))
++    await expect(b.uiWorkspace.archiveSessionWithOutcome(sid('one'))).resolves.toEqual({ kind: 'confirmation', plan })
++    await expect(b.uiWorkspace.archiveSessionWithOutcome(sid('one'), { plan })).resolves.toEqual({ kind: 'group', plan, result: archiveResult(state) })
++    expect(b.sessions.retained[0]!.release).toHaveBeenCalledOnce()
++    expect(commit).toHaveBeenCalledWith(plan, { archiveScope: 'related', stopActivity: false })
++    b.uiWorkspace.openSession(sid('other'))
++    await b.uiWorkspace.archiveSessionWithOutcome(sid('one'))
++    expect(b.sessions.retained.at(-1)!.reference.sessionId).toBe(sid('other'))
++    expect(b.sessions.retained.at(-1)!.release).not.toHaveBeenCalled()
++  })
++
++  it('rejects duplicate provider IDs, mismatched plans and prepare errors without singleton fallback', async () => {
++    const b = bench()
++    const prepare = vi.fn(async () => ({ ...archivePlan(), targetId: sid('different') }))
++    const commit = vi.fn(async () => archiveResult())
++    const provider = { id: 'provider', version: 2 as const, prepare, commit }
++    const dispose = b.uiWorkspace.registerSessionArchiveProvider(provider)
++    expect(() => b.uiWorkspace.registerSessionArchiveProvider(provider)).toThrow()
++    await expect(b.uiWorkspace.archiveSessionWithOutcome(sid('one'))).rejects.toThrow()
++    dispose()
++    b.uiWorkspace.registerSessionArchiveProvider({ ...provider, prepare: async () => { throw new Error('permission denied') } })
++    await expect(b.uiWorkspace.archiveSessionWithOutcome(sid('one'))).rejects.toThrow('permission denied')
++    expect(commit).not.toHaveBeenCalled()
++    expect(b.workspaces.archiveCalls).toEqual([])
++  })
++
++  it('does not fall back after provider failure or retry an uncertain commit', async () => {
++    const b = bench()
++    const plan = archivePlan(false)
++    const commit = vi.fn(async () => { throw new Error('ARCHIVE_PLAN_CHANGED') })
++    b.uiWorkspace.registerSessionArchiveProvider({ id: 'provider', version: 2, prepare: async () => plan, commit })
++    await expect(b.uiWorkspace.archiveSessionWithOutcome(sid('one'))).resolves.toEqual({ kind: 'confirmation', plan })
++    await expect(b.uiWorkspace.archiveSessionWithOutcome(sid('one'), { plan })).rejects.toThrow('ARCHIVE_PLAN_CHANGED')
++    await expect(b.uiWorkspace.archiveSessionWithOutcome(sid('one'), { plan, stopActivity: true })).rejects.toThrow()
++    expect(commit).toHaveBeenCalledOnce()
++    expect(b.workspaces.archiveCalls).toEqual([])
++  })
++})
++
++describe('display relation navigation', () => {
++  it.each([false, true])('handles late edges once, respecting newer navigation (%s) and later manual collapse', (navigateAway) => {
++    const b = bench({ sessions: sessionState(['a', 'b', 'c', 'plain'].map(id => summary(id))), workspaces: workspaceState([workspace('w', ['a', 'b', 'c', 'plain'].map(sid))]) })
++    const source = new MutableSource<SessionRelationsSnapshot>({ schemaVersion: 1, edges: [], loading: true, truncated: false })
++    b.uiWorkspace.registerSessionRelations({ id: 'late', version: 1, source })
++    b.uiWorkspace.sessionRelations.subscribe(() => {})
++    b.view.actions.setSessionRelationExpanded(wid('w'), sid('a'), false)
++    b.view.actions.setSessionRelationExpanded(wid('w'), sid('b'), false)
++    b.uiWorkspace.openSession(sid('c'))
++    if (navigateAway) b.uiWorkspace.openSession(sid('plain'))
++    expect(b.view.getSnapshot().sessionRelationExpansion?.[sessionRelationExpansionKey(wid('w'), sid('a'))]).toBe(false)
++    const ready: SessionRelationsSnapshot = { schemaVersion: 1, loading: false, truncated: false, edges: [
++      { workspaceId: wid('w'), sourceId: sid('a'), targetId: sid('b'), kind: 'created-session' },
++      { workspaceId: wid('w'), sourceId: sid('b'), targetId: sid('c'), kind: 'created-session' },
++    ] }
++    source.set(ready)
++    expect(b.view.getSnapshot().sessionRelationExpansion?.[sessionRelationExpansionKey(wid('w'), sid('a'))]).toBe(!navigateAway)
++    expect(b.view.getSnapshot().sessionRelationExpansion?.[sessionRelationExpansionKey(wid('w'), sid('b'))]).toBe(false)
++    b.view.actions.setSessionRelationExpanded(wid('w'), sid('a'), false)
++    source.set({ ...ready })
++    expect(b.view.getSnapshot().sessionRelationExpansion?.[sessionRelationExpansionKey(wid('w'), sid('a'))]).toBe(false)
++  })
++
++  it.each(['archived', 'blank'] as const)('reveals the orphan root below a %s ancestor', (hidden) => {
++    const b = bench({
++      sessions: sessionState([summary('a', { blank: hidden === 'blank' }), summary('b'), summary('c')]),
++      workspaces: workspaceState([workspace('w', ['a', 'b', 'c'].map(sid))], hidden === 'archived' ? [sid('a')] : []),
++    })
++    const source = new MutableSource<SessionRelationsSnapshot>({ schemaVersion: 1, loading: false, truncated: false, edges: [
++      { workspaceId: wid('w'), sourceId: sid('a'), targetId: sid('b'), kind: 'created-session' },
++      { workspaceId: wid('w'), sourceId: sid('b'), targetId: sid('c'), kind: 'created-session' },
++    ] })
++    b.uiWorkspace.registerSessionRelations({ id: 'orphan', version: 1, source })
++    b.view.actions.setSessionRelationExpanded(wid('w'), sid('a'), false)
++    b.view.actions.setSessionRelationExpanded(wid('w'), sid('b'), false)
++    b.uiWorkspace.openSession(sid('c'))
++    expect(b.view.getSnapshot().sessionRelationExpansion).toEqual({
++      [sessionRelationExpansionKey(wid('w'), sid('a'))]: false,
++      [sessionRelationExpansionKey(wid('w'), sid('b'))]: true,
++    })
++  })
++
++  it('reveals only the visible root through native navigation, retaining old child preferences and provider cleanup', async () => {
++    const b = bench({
++      sessions: sessionState(['a', 'b', 'c'].map(id => summary(id))),
++      workspaces: workspaceState([workspace('w', ['a', 'b', 'c'].map(sid))]),
++    })
++    const source = new MutableSource<SessionRelationsSnapshot>({ schemaVersion: 1, loading: false, truncated: false, edges: [
++      { workspaceId: wid('w'), sourceId: sid('a'), targetId: sid('b'), kind: 'created-session' },
++      { workspaceId: wid('w'), sourceId: sid('b'), targetId: sid('c'), kind: 'created-session' },
++    ] })
++    expect(b.uiWorkspace.sessionRelationsVersion).toBe(1)
++    b.uiWorkspace.registerSessionRelations({ id: 'test', version: 1, source })
++    b.uiWorkspace.sessionRelations.subscribe(() => {})
++    b.view.actions.setSessionRelationExpanded(wid('w'), sid('a'), false)
++    b.view.actions.setSessionRelationExpanded(wid('w'), sid('b'), false)
++    b.view.actions.setSessionRelationExpanded(wid('other'), sid('a'), false)
++    b.uiWorkspace.openSession(sid('c'))
++    expect(b.view.getSnapshot().sessionRelationExpansion).toEqual({
++      [sessionRelationExpansionKey(wid('w'), sid('a'))]: true,
++      [sessionRelationExpansionKey(wid('w'), sid('b'))]: false,
++      [sessionRelationExpansionKey(wid('other'), sid('a'))]: false,
++    })
++    expect(b.sessions.retain).toHaveBeenCalledWith(sid('c'), expect.anything())
++    expect(source.listenersSnapshot()).toHaveLength(1)
++    await b.ctx.fiber.dispose()
++    expect(source.listenersSnapshot()).toHaveLength(0)
++  })
++})
++
+ function lastOpening(open: MockInstance<UiWorkspaceService['openWorkspace']>): Promise<void> {
+   const result = open.mock.results.at(-1)
+   if (result?.type !== 'return') throw new Error('startSession did not start Workspace navigation')
+diff --git a/packages/client/ui-workspace/src/client/contract/session-archive.ts b/packages/client/ui-workspace/src/client/contract/session-archive.ts
+new file mode 100644
+index 00000000..e856735a
+--- /dev/null
++++ b/packages/client/ui-workspace/src/client/contract/session-archive.ts
+@@ -0,0 +1,60 @@
++/** Display and control contract for server-planned archive groups; independent of relation metadata. */
++import type { SessionId } from '@deepseek-ai/dsh-session/types'
++
++/** The user's archive range; consent to stopping activity is separate. */
++export type SessionArchiveScope = 'single' | 'related'
++
++/** A scope question, not a plan: it names no frozen members and cannot be committed. */
++export interface SessionArchiveScopeChoice {
++  readonly kind: 'scope-choice'
++  readonly targetId: SessionId
++  readonly allowedScopes: readonly SessionArchiveScope[]
++}
++
++/** Sanitized activity facts; nullable identifiers are not native Session identities. */
++export interface SessionArchiveActivity {
++  readonly kind: string
++  readonly items: readonly { readonly id: string | null; readonly label: string | null }[]
++  readonly totalItems: number
++}
++
++/** An immutable server plan. The provider, never the visible sidebar, determines its scope. */
++export interface SessionArchivePlan {
++  readonly planId: string
++  readonly archiveScope: SessionArchiveScope
++  readonly targetId: SessionId
++  readonly targets: readonly { readonly id: SessionId; readonly alreadyArchived: boolean; readonly title?: string }[]
++  readonly activity: readonly {
++    readonly sessionId: SessionId
++    readonly title?: string
++    readonly groups: readonly SessionArchiveActivity[]
++    readonly totalGroups: number
++  }[]
++  readonly requiresConfirmation: boolean
++  readonly total: number
++}
++
++/** A non-atomic commit result. Archived identities remain useful even when the commit is incomplete. */
++export interface SessionArchiveCommitOutcome {
++  readonly archiveScope: SessionArchiveScope
++  readonly archiveState: 'succeeded' | 'partial' | 'unknown' | 'failed'
++  readonly archivedIds: readonly SessionId[]
++  readonly remaining: readonly SessionId[]
++  readonly failed: readonly { readonly id: SessionId; readonly state: 'failed' | 'unknown' }[]
++  readonly stopActivityRequested: boolean
++}
++
++/** Register through the owning plugin's ctx.effect; dispose invalidates every uncommitted plan. */
++export interface SessionArchiveProvider {
++  readonly id: string
++  readonly version: 2
++  prepare(sessionId: SessionId, options?: { readonly archiveScope?: SessionArchiveScope }): Promise<SessionArchiveScopeChoice | SessionArchivePlan | undefined>
++  commit(plan: SessionArchivePlan, options: { readonly archiveScope: SessionArchiveScope; readonly stopActivity: boolean }): Promise<SessionArchiveCommitOutcome>
++}
++
++/** Shared UI result; successful single scope keeps singleton undo, related scope never does. */
++export type SessionArchiveOutcome =
++  | { readonly kind: 'single' }
++  | { readonly kind: 'scope-choice'; readonly choice: SessionArchiveScopeChoice }
++  | { readonly kind: 'confirmation'; readonly plan: SessionArchivePlan }
++  | { readonly kind: 'group'; readonly plan: SessionArchivePlan; readonly result: SessionArchiveCommitOutcome }
+diff --git a/packages/client/ui-workspace/src/client/contract/session-relations.ts b/packages/client/ui-workspace/src/client/contract/session-relations.ts
+new file mode 100644
+index 00000000..8bc7af1f
+--- /dev/null
++++ b/packages/client/ui-workspace/src/client/contract/session-relations.ts
+@@ -0,0 +1,27 @@
++/** Display-only relationships; neither registration nor rendering changes Session ownership. */
++import type { WorkspaceId } from '@deepseek-ai/dsh-api-workspace-controller/client'
++import type { HostObservable } from '@deepseek-ai/dsh-client-ui-slots'
++import type { SessionId } from '@deepseek-ai/dsh-session/types'
++
++/** A created ordinary Session displayed below its creator in their shared Workspace. */
++export interface SessionRelationEdge {
++  readonly workspaceId: WorkspaceId
++  readonly sourceId: SessionId
++  readonly targetId: SessionId
++  readonly kind: 'created-session'
++}
++
++/** Stable provider snapshot; incomplete data never claims a complete relationship inventory. */
++export interface SessionRelationsSnapshot {
++  readonly schemaVersion: 1
++  readonly edges: readonly SessionRelationEdge[]
++  readonly truncated: boolean
++  readonly loading: boolean
++}
++
++/** One effect-owned provider; source and snapshot identities stay stable between changes. */
++export interface SessionRelationsRegistration {
++  readonly id: string
++  readonly version: 1
++  readonly source: HostObservable<SessionRelationsSnapshot>
++}
+diff --git a/packages/client/ui-workspace/src/client/session-relations.ts b/packages/client/ui-workspace/src/client/session-relations.ts
+new file mode 100644
+index 00000000..e33ee111
+--- /dev/null
++++ b/packages/client/ui-workspace/src/client/session-relations.ts
+@@ -0,0 +1,211 @@
++/** Service-owned provider aggregation and pure display hierarchy derivation. */
++import type { SessionListState } from '@deepseek-ai/dsh-api-session-controller/client'
++import type { WorkspaceId, WorkspaceView } from '@deepseek-ai/dsh-api-workspace-controller/client'
++import type { SessionId } from '@deepseek-ai/dsh-session/types'
++import type { SessionRelationEdge, SessionRelationsRegistration, SessionRelationsSnapshot } from './contract/session-relations.ts'
++import type { SessionNode } from './tree.ts'
++
++/** Observable aggregate owned and disposed by one UiWorkspace service. */
++export class SessionRelationsRegistry {
++  private readonly providers = new Map<string, { source: SessionRelationsRegistration['source']; dispose: () => void }>()
++  private readonly listeners = new Set<() => void>()
++  private snapshot: SessionRelationsSnapshot = { schemaVersion: 1, edges: [], loading: false, truncated: false }
++
++  /** @param onChange - owner notification; unlike a browser subscription, it does not activate providers. */
++  constructor(private readonly onChange: () => void = () => {}) {}
++
++  /** @returns the same immutable snapshot until a provider publishes or registration changes. */
++  getSnapshot = (): SessionRelationsSnapshot => this.snapshot
++
++  /** @param listener - aggregate change observer. @returns observer cleanup. */
++  subscribe = (listener: () => void): (() => void) => {
++    const first = this.listeners.size === 0
++    this.listeners.add(listener)
++    if (first) {
++      for (const provider of this.providers.values()) provider.dispose = provider.source.subscribe(this.publish)
++      this.publish()
++    }
++    return () => {
++      this.listeners.delete(listener)
++      if (this.listeners.size !== 0) return
++      for (const provider of this.providers.values()) {
++        provider.dispose()
++        provider.dispose = () => {}
++      }
++      this.publish()
++    }
++  }
++
++  /** @param registration - uniquely named provider. @returns idempotent provider cleanup. */
++  register(registration: SessionRelationsRegistration): () => void {
++    if (this.providers.has(registration.id)) throw new Error(`Session relations provider already registered: ${registration.id}`)
++    const provider = { source: registration.source, dispose: () => {} }
++    this.providers.set(registration.id, provider)
++    try {
++      if (this.listeners.size > 0) provider.dispose = registration.source.subscribe(this.publish)
++      this.publish()
++    } catch (error) {
++      this.providers.delete(registration.id)
++      provider.dispose()
++      throw error
++    }
++    return () => {
++      if (this.providers.get(registration.id) !== provider) return
++      this.providers.delete(registration.id)
++      provider.dispose()
++      this.publish()
++    }
++  }
++
++  /** Remove provider subscriptions and consumers when the owning service unloads. */
++  dispose(): void {
++    for (const provider of this.providers.values()) provider.dispose()
++    this.providers.clear()
++    this.publish()
++    this.listeners.clear()
++  }
++
++  private publish = (): void => {
++    const snapshots = [...this.providers.values()].map(provider => provider.source.getSnapshot())
++    this.snapshot = {
++      schemaVersion: 1,
++      edges: snapshots.flatMap(snapshot => snapshot.edges),
++      loading: snapshots.some(snapshot => snapshot.loading),
++      truncated: snapshots.some(snapshot => snapshot.truncated),
++    }
++    this.onChange()
++    for (const listener of this.listeners) listener()
++  }
++}
++
++/**
++ * Resolve display parents against authoritative ordinary Session membership.
++ * Earlier edges win conflicts; cyclic candidates and ambiguous Workspace membership are omitted.
++ * @param summaries - current Session catalog.
++ * @param workspaces - registered Workspace membership, independent of display order.
++ * @param edges - registered display-only relationships in provider order.
++ * @returns a single-parent acyclic map; no Session objects are modified.
++ */
++export function sessionRelationParents(
++  summaries: SessionListState['byId'],
++  workspaces: readonly WorkspaceView[],
++  edges: readonly SessionRelationEdge[],
++): ReadonlyMap<SessionId, SessionId> {
++  const owners = new Map<SessionId, WorkspaceId | null>()
++  for (const workspace of workspaces) {
++    for (const id of workspace.sessionIds) {
++      const existing = owners.get(id)
++      owners.set(id, existing === undefined || existing === workspace.workspaceId ? workspace.workspaceId : null)
++    }
++  }
++  const parents = new Map<SessionId, SessionId>()
++  for (const edge of edges) {
++    if (edge.sourceId === edge.targetId || parents.has(edge.targetId)) continue
++    if (owners.get(edge.sourceId) !== edge.workspaceId || owners.get(edge.targetId) !== edge.workspaceId) continue
++    const source = summaries[edge.sourceId]
++    const target = summaries[edge.targetId]
++    if (source === undefined || target === undefined || source.origin === 'subagent' || target.origin === 'subagent') continue
++    if (source.parentId !== undefined || target.parentId !== undefined) continue
++    let ancestor: SessionId | undefined = edge.sourceId
++    while (ancestor !== undefined && ancestor !== edge.targetId) ancestor = parents.get(ancestor)
++    if (ancestor === edge.targetId) continue
++    parents.set(edge.targetId, edge.sourceId)
++  }
++  return parents
++}
++
++/** @param workspaceId - owning Workspace. @param sessionId - parent row. @returns unambiguous persisted expansion key. */
++export function sessionRelationExpansionKey(workspaceId: WorkspaceId, sessionId: SessionId): string {
++  return JSON.stringify([workspaceId, sessionId])
++}
++
++/** One branch step; only the final sibling ends its connector at the row midpoint. */
++export interface SessionRelationBranch {
++  readonly id: SessionId
++  readonly last: boolean
++}
++
++/** Native row plus display-only hierarchy information. */
++export interface RelatedSessionRow {
++  readonly node: SessionNode
++  readonly displayParentId?: SessionId
++  readonly branches: readonly SessionRelationBranch[]
++  readonly hasChildren: boolean
++  readonly expanded: boolean
++}
++
++/**
++ * Admit complete relation components intersecting a native watermark and flatten each below its root.
++ * Only root collapse applies; descendant preferences are ignored. DFS order and metadata edges stay intact.
++ * Hidden parents detach their visible children; unrelated rows retain native watermark and ordering.
++ * @param sessions - all native rows after visibility filters.
++ * @param seeds - rows selected by the native watermark.
++ * @param parents - authoritative display parents.
++ * @param workspaceId - absent for Ungrouped, which stays flat.
++ * @param expansion - browser-local relation expansion preferences.
++ * @returns projected rows and nonblank rows still outside the watermark (not collapsed descendants).
++ */
++export function relatedSessionRows(
++  sessions: readonly SessionNode[],
++  seeds: readonly SessionNode[],
++  parents: ReadonlyMap<SessionId, SessionId>,
++  workspaceId: WorkspaceId | undefined,
++  expansion: Readonly<Record<string, boolean>>,
++): { rows: readonly RelatedSessionRow[]; hiddenCount: number } {
++  const visible = new Set(sessions.filter(row => !row.archived).map(row => row.id))
++  const displayParents = new Map<SessionId, SessionId>()
++  if (workspaceId !== undefined) {
++    for (const node of sessions) {
++      const parent = parents.get(node.id)
++      if (!node.archived && parent !== undefined && visible.has(parent)) displayParents.set(node.id, parent)
++    }
++  }
++  const roots = new Map<SessionId, SessionId>()
++  for (const node of sessions) {
++    const path: SessionId[] = []
++    let root = node.id
++    while (!roots.has(root) && displayParents.has(root)) {
++      path.push(root)
++      root = displayParents.get(root)!
++    }
++    root = roots.get(root) ?? root
++    roots.set(node.id, root)
++    for (const id of path) roots.set(id, root)
++  }
++  const admitted = new Set(seeds.map(row => roots.get(row.id)!))
++  const children = new Map<SessionId, SessionNode[]>()
++  const top: SessionNode[] = []
++  let hiddenCount = 0
++  for (const node of sessions) {
++    if (!admitted.has(roots.get(node.id)!)) {
++      if (!node.blank) hiddenCount++
++      continue
++    }
++    const parent = displayParents.get(node.id)
++    if (parent === undefined) top.push(node)
++    else {
++      const siblings = children.get(parent) ?? []
++      siblings.push(node)
++      children.set(parent, siblings)
++    }
++  }
++  const rows: RelatedSessionRow[] = []
++  for (const root of top) {
++    const directChildren = children.get(root.id) ?? []
++    const expanded = workspaceId === undefined || expansion[sessionRelationExpansionKey(workspaceId, root.id)] !== false
++    rows.push({ node: root, branches: [], hasChildren: directChildren.length > 0, expanded })
++    if (!expanded) continue
++    const descendants: SessionNode[] = []
++    const pending = [...directChildren].reverse()
++    while (pending.length > 0) {
++      const child = pending.pop()!
++      descendants.push(child)
++      const next = children.get(child.id) ?? []
++      for (let i = next.length - 1; i >= 0; i--) pending.push(next[i]!)
++    }
++    for (const [index, node] of descendants.entries()) {
++      rows.push({ node, displayParentId: root.id, branches: [{ id: node.id, last: index === descendants.length - 1 }], hasChildren: false, expanded: true })
++    }
++  }
++  return { rows, hiddenCount }
++}
+diff --git a/packages/client/ui-workspace/tests/archive-fixtures.client.ts b/packages/client/ui-workspace/tests/archive-fixtures.client.ts
+new file mode 100644
+index 00000000..f781289d
+--- /dev/null
++++ b/packages/client/ui-workspace/tests/archive-fixtures.client.ts
+@@ -0,0 +1,38 @@
++import { SessionId } from '@deepseek-ai/dsh-session/types'
++import type { SessionArchivePlan, SessionArchiveCommitOutcome, SessionArchiveScopeChoice } from '../src/client/contract/session-archive.ts'
++
++export function archiveChoice(): SessionArchiveScopeChoice {
++  return { kind: 'scope-choice', targetId: SessionId('one'), allowedScopes: ['single', 'related'] }
++}
++
++export function singleArchivePlan(requiresConfirmation = false): SessionArchivePlan {
++  return { archiveScope: 'single', planId: 'single-plan', targetId: SessionId('one'), total: 1,
++    targets: [{ id: SessionId('one'), title: 'Parent title', alreadyArchived: false }], requiresConfirmation,
++    activity: requiresConfirmation ? [{ sessionId: SessionId('one'), totalGroups: 1, groups: [{ kind: 'turn', items: [], totalItems: 1 }] }] : [] }
++}
++
++export function singleArchiveResult(): SessionArchiveCommitOutcome {
++  return { archiveScope: 'single', archiveState: 'succeeded', archivedIds: [SessionId('one')], remaining: [], failed: [], stopActivityRequested: false }
++}
++
++export function archivePlan(requiresConfirmation = true): SessionArchivePlan {
++  return {
++    archiveScope: 'related', planId: 'server-plan', targetId: SessionId('one'), total: 2, requiresConfirmation,
++    targets: [
++      { id: SessionId('child'), title: 'Child title', alreadyArchived: false },
++      { id: SessionId('one'), title: 'Parent title', alreadyArchived: false },
++    ],
++    activity: requiresConfirmation ? [{ sessionId: SessionId('child'), title: 'Child title', totalGroups: 2,
++      groups: [{ kind: 'job', items: [{ id: null, label: null }, { id: 'job-2', label: 'Build' }], totalItems: 3 }] }] : [],
++  }
++}
++
++export function archiveResult(archiveState: SessionArchiveCommitOutcome['archiveState'] = 'succeeded'): SessionArchiveCommitOutcome {
++  return {
++    archiveScope: 'related', archiveState,
++    archivedIds: archiveState === 'succeeded' ? [SessionId('child'), SessionId('one')] : [SessionId('child')],
++    remaining: archiveState === 'succeeded' ? [] : [SessionId('one')],
++    failed: archiveState === 'succeeded' ? [] : [{ id: SessionId('one'), state: 'unknown' }],
++    stopActivityRequested: true,
++  }
++}
+diff --git a/packages/client/ui-workspace/tests/session-relations.client.spec.ts b/packages/client/ui-workspace/tests/session-relations.client.spec.ts
+new file mode 100644
+index 00000000..4dbc6359
+--- /dev/null
++++ b/packages/client/ui-workspace/tests/session-relations.client.spec.ts
+@@ -0,0 +1,131 @@
++import { describe, expect, it, vi } from 'vitest'
++import type { SessionListState, SessionSummary } from '@deepseek-ai/dsh-api-session-controller/client'
++import type { WorkspaceId, WorkspaceView } from '@deepseek-ai/dsh-api-workspace-controller/client'
++import type { SessionId } from '@deepseek-ai/dsh-session/types'
++import type { SessionRelationEdge, SessionRelationsSnapshot } from '../src/client/contract/session-relations.ts'
++import { relatedSessionRows, sessionRelationExpansionKey, sessionRelationParents, SessionRelationsRegistry } from '../src/client/session-relations.ts'
++import type { SessionNode } from '../src/client/tree.ts'
++
++const sid = (id: string) => id as SessionId
++const wid = (id: string) => id as WorkspaceId
++const edge = (source: string, target: string, workspaceId = 'w'): SessionRelationEdge => ({ workspaceId: wid(workspaceId), sourceId: sid(source), targetId: sid(target), kind: 'created-session' })
++const workspace = (id: string, ids: string[]): WorkspaceView => ({ workspaceId: wid(id), sessionIds: ids.map(sid), path: `/${id}`, title: id, createdAt: '2026-01-01', updatedAt: '2026-01-01' })
++const catalog = (ids: string[], overrides: Record<string, Partial<SessionSummary>> = {}): SessionListState['byId'] => Object.fromEntries(ids.map(id => [id, { id: sid(id), title: id, displayTitle: id, running: false, blank: false, updatedAt: 0, retainedBy: {}, ...overrides[id] }]))
++const node = (id: string, overrides: Partial<SessionNode> = {}): SessionNode => ({ id: sid(id), title: id, blank: false, running: false, runningSubagentCount: 0, completed: false, pinned: false, archived: false, updatedAt: 0, ...overrides })
++const snapshot = (edges: SessionRelationEdge[] = []): SessionRelationsSnapshot => ({ schemaVersion: 1, edges, loading: false, truncated: false })
++
++class Source {
++  listeners = new Set<() => void>()
++  constructor(private value: SessionRelationsSnapshot = snapshot()) {}
++  getSnapshot = () => this.value
++  subscribe = (listener: () => void) => { this.listeners.add(listener); return () => { this.listeners.delete(listener) } }
++  set(value: SessionRelationsSnapshot) { this.value = value; for (const listener of this.listeners) listener() }
++}
++
++describe('SessionRelationsRegistry', () => {
++  it('only subscribes while the native browser observes, aggregates stable snapshots and releases each provider', () => {
++    const registry = new SessionRelationsRegistry()
++    const a = new Source(snapshot([edge('a', 'b')]))
++    const b = new Source({ ...snapshot(), loading: true, truncated: true })
++    const removeA = registry.register({ id: 'a', version: 1, source: a })
++    const removeB = registry.register({ id: 'b', version: 1, source: b })
++    expect(a.listeners.size).toBe(0)
++    expect(registry.getSnapshot()).toBe(registry.getSnapshot())
++    const listener = vi.fn()
++    const stop = registry.subscribe(listener)
++    expect(a.listeners.size).toBe(1)
++    expect(b.listeners.size).toBe(1)
++    expect(registry.getSnapshot()).toMatchObject({ edges: [edge('a', 'b')], loading: true, truncated: true })
++    a.set(snapshot([edge('a', 'c')]))
++    expect(registry.getSnapshot().edges).toEqual([edge('a', 'c')])
++    removeB(); removeB()
++    expect(b.listeners.size).toBe(0)
++    expect(registry.getSnapshot().loading).toBe(false)
++    stop()
++    expect(a.listeners.size).toBe(0)
++    const stopAgain = registry.subscribe(listener)
++    expect(a.listeners.size).toBe(1)
++    removeA(); stopAgain()
++    expect(registry.getSnapshot().edges).toEqual([])
++  })
++
++  it('rejects duplicate provider ids, rolls back failed admission, and disposes all subscriptions', () => {
++    const registry = new SessionRelationsRegistry()
++    const a = new Source()
++    registry.subscribe(() => {})
++    registry.register({ id: 'a', version: 1, source: a })
++    expect(() => registry.register({ id: 'a', version: 1, source: a })).toThrow('already registered')
++    expect(() => registry.register({ id: 'bad', version: 1, source: { getSnapshot: a.getSnapshot, subscribe: () => { throw new Error('subscription failed') } } })).toThrow('subscription failed')
++    registry.register({ id: 'bad', version: 1, source: new Source() })
++    registry.dispose()
++    expect(a.listeners.size).toBe(0)
++    expect(registry.getSnapshot().edges).toEqual([])
++  })
++})
++
++describe('display-only Session relation forest', () => {
++  it('accepts ordinary same-workspace edges, first parent wins, and rejects cycles/self/duplicates/missing/cross-workspace', () => {
++    const summaries = catalog(['a', 'b', 'c', 'd', 'x'])
++    const original = structuredClone(summaries)
++    const parents = sessionRelationParents(summaries, [workspace('w', ['a', 'b', 'c', 'd']), workspace('x', ['x'])], [
++      edge('a', 'b'), edge('b', 'c'), edge('c', 'a'), edge('d', 'b'), edge('a', 'b'), edge('a', 'a'), edge('a', 'x'), edge('a', 'missing'),
++    ])
++    expect([...parents]).toEqual([['b', 'a'], ['c', 'b']])
++    expect(summaries).toEqual(original)
++  })
++
++  it('rejects managed/btw children, forks and ambiguous membership without changing native Session ownership', () => {
++    const summaries = catalog(['a', 'b', 'sub', 'fork'], { sub: { origin: 'subagent' }, fork: { parentId: sid('a') } })
++    const parents = sessionRelationParents(summaries, [workspace('w', ['a', 'b', 'sub', 'fork']), workspace('other', ['b'])], [edge('a', 'sub'), edge('sub', 'a'), edge('a', 'fork'), edge('fork', 'a'), edge('a', 'b')])
++    expect(parents.size).toBe(0)
++  })
++
++  it('admits a full related component even when a child or parent lies beyond native watermark, preserving unrelated limits/order', () => {
++    const nodes = ['u', 'b', 'c', 'a', 'hidden'].map(id => node(id))
++    const parents = new Map([[sid('b'), sid('a')], [sid('c'), sid('b')]])
++    const result = relatedSessionRows(nodes, nodes.slice(0, 2), parents, wid('w'), {})
++    expect(result.rows.map(row => row.node.id)).toEqual(['u', 'a', 'b', 'c'])
++    expect(result.rows.map(row => row.displayParentId)).toEqual([undefined, undefined, 'a', 'a'])
++    expect(result.hiddenCount).toBe(1)
++    expect(result.rows[3]?.branches).toEqual([{ id: 'c', last: true }])
++  })
++
++  it('flattens all descendants in DFS order with one final elbow without changing metadata parents', () => {
++    const nodes = ['a', 'b', 'c', 'd'].map(id => node(id))
++    const parents = new Map([[sid('b'), sid('a')], [sid('c'), sid('a')], [sid('d'), sid('b')]])
++    const result = relatedSessionRows(nodes, nodes, parents, wid('w'), {})
++    expect(result.rows.map(row => [row.node.id, row.branches.map(branch => branch.last)])).toEqual([['a', []], ['b', [false]], ['d', [false]], ['c', [true]]])
++    expect(result.rows.slice(1).every(row => row.displayParentId === sid('a') && !row.hasChildren)).toBe(true)
++    expect(parents.get(sid('d'))).toBe(sid('b'))
++  })
++
++  it('ignores old child collapse but persists root collapse without counting folded descendants as overflow', () => {
++    const nodes = ['a', 'b', 'c'].map(id => node(id))
++    const parents = new Map([[sid('b'), sid('a')], [sid('c'), sid('b')]])
++    const expansion = { [sessionRelationExpansionKey(wid('w'), sid('b'))]: false }
++    const result = relatedSessionRows(nodes, nodes.slice(0, 1), parents, wid('w'), expansion)
++    expect(result.rows.map(row => row.node.id)).toEqual(['a', 'b', 'c'])
++    expect(result.hiddenCount).toBe(0)
++    expect(result.rows[1]).toMatchObject({ hasChildren: false, expanded: true })
++    expansion[sessionRelationExpansionKey(wid('w'), sid('a'))] = false
++    const folded = relatedSessionRows(nodes, nodes, parents, wid('w'), expansion)
++    expect(folded.rows.map(row => row.node.id)).toEqual(['a'])
++    expect(folded.hiddenCount).toBe(0)
++    expect(relatedSessionRows(nodes, nodes, parents, wid('other'), expansion).rows).toHaveLength(3)
++    const orphan = relatedSessionRows(nodes.slice(1), nodes.slice(1), parents, wid('w'), expansion)
++    expect(orphan.rows.map(row => row.node.id)).toEqual(['b'])
++    expect(orphan.rows[0]).toMatchObject({ hasChildren: true, expanded: false })
++  })
++
++  it('detaches invisible/archived parents and archived targets even in show-all; no provider/ungrouped stay flat', () => {
++    const parents = new Map([[sid('b'), sid('a')], [sid('c'), sid('b')]])
++    const nodes = [node('a', { archived: true }), node('b'), node('c', { archived: true })]
++    expect(relatedSessionRows(nodes, nodes, parents, wid('w'), {}).rows.every(row => row.displayParentId === undefined)).toBe(true)
++    const onlyChild = [node('b')]
++    expect(relatedSessionRows(onlyChild, onlyChild, parents, wid('w'), {}).rows[0]?.displayParentId).toBeUndefined()
++    const flat = relatedSessionRows(nodes, nodes.slice(0, 2), parents, undefined, {})
++    expect(flat.rows.map(row => row.node.id)).toEqual(['a', 'b'])
++    expect(flat.hiddenCount).toBe(1)
++    expect(relatedSessionRows(nodes, nodes, new Map(), wid('w'), {}).rows.map(row => row.node)).toEqual(nodes)
++  })
++})

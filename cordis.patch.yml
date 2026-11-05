@@ -1,0 +1,6 @@
+- insert:
+    - id: session-link
+      # AppBoot anchors this path at the bundle patch, yielding its file URL.
+      # Earlier backend-only releases cached null metadata for the bare name.
+      # Replace the SAME entry id; never mount a second copy of this package.
+      name: ./index.js
